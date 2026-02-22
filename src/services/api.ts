@@ -42,7 +42,7 @@ export const fetchOrganization = async (orgId: string) => {
 export const fetchOrgMembers = async (orgId: string) => {
   const { data, error } = await supabase
     .from("organization_members")
-    .select("*, profiles:user_id(full_name, avatar_url)")
+    .select("*, profiles:organization_members_user_id_profiles_fkey(full_name, avatar_url)")
     .eq("organization_id", orgId);
   if (error) throw error;
   return data;
@@ -84,7 +84,7 @@ export const fetchProject = async (projectId: string) => {
 export const fetchTasks = async (projectId: string) => {
   const { data, error } = await supabase
     .from("tasks")
-    .select("*, profiles:assignee_id(full_name, avatar_url)")
+    .select("*, profiles:tasks_assignee_id_profiles_fkey(full_name, avatar_url)")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -135,7 +135,7 @@ export const updateTask = async (taskId: string, updates: Record<string, any>) =
 export const fetchComments = async (taskId: string) => {
   const { data, error } = await supabase
     .from("comments")
-    .select("*, profiles:user_id(full_name, avatar_url)")
+    .select("*, profiles:comments_user_id_profiles_fkey(full_name, avatar_url)")
     .eq("task_id", taskId)
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -149,7 +149,7 @@ export const addComment = async (taskId: string, content: string) => {
   const { data, error } = await supabase
     .from("comments")
     .insert({ task_id: taskId, user_id: user.id, content })
-    .select("*, profiles:user_id(full_name, avatar_url)")
+    .select("*, profiles:comments_user_id_profiles_fkey(full_name, avatar_url)")
     .single();
   if (error) throw error;
   return data;
@@ -178,7 +178,7 @@ export const logActivity = async (
 export const fetchActivityLog = async (orgId: string, limit = 20) => {
   const { data, error } = await supabase
     .from("activity_log")
-    .select("*, profiles:user_id(full_name)")
+    .select("*, profiles:activity_log_user_id_profiles_fkey(full_name)")
     .eq("organization_id", orgId)
     .order("created_at", { ascending: false })
     .limit(limit);
