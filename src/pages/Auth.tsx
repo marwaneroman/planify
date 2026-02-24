@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { apiFetch } from "@/lib/apiClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,8 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Layers } from "lucide-react";
 
 const Auth = () => {
-  const { user, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
+  const { user, loading: authLoading, setSession } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,25 +25,51 @@ const Auth = () => {
     e.preventDefault();
     setLoading(true);
 
-    if (isLogin) {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        toast({ title: "Login failed", description: error.message, variant: "destructive" });
-      }
-    } else {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { full_name: fullName },
-          emailRedirectTo: window.location.origin,
-        },
-      });
-      if (error) {
-        toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
+    try {
+      if (isLogin) {
+        const data = await apiFetch<{ session: { access_token: string; user: { id: string; email: string; user_metadata?: { full_name: string } } } }>(
+          "/auth/login",
+          {
+            method: "POST",
+            body: JSON.stringify({ email, password }),
+          }
+        );
+        if (data?.session) {
+          setSession({
+            access_token: data.session.access_token,
+            user: {
+              id: data.session.user.id,
+              email: data.session.user.email,
+              user_metadata: data.session.user.user_metadata,
+            },
+          });
+        }
       } else {
-        toast({ title: "Check your email", description: "We sent you a confirmation link." });
+        const data = await apiFetch<{ session?: { access_token: string; user: { id: string; email: string; user_metadata?: { full_name: string } } } }>(
+          "/auth/register",
+          {
+            method: "POST",
+            body: JSON.stringify({ email, password, full_name: fullName }),
+          }
+        );
+        if (data?.session) {
+          setSession({
+            access_token: data.session.access_token,
+            user: {
+              id: data.session.user.id,
+              email: data.session.user.email,
+              user_metadata: data.session.user.user_metadata,
+            },
+          });
+          toast({ title: "Account created", description: "Welcome!" });
+        }
       }
+    } catch (err: any) {
+      toast({
+        title: isLogin ? "Login failed" : "Sign up failed",
+        description: err.message || "Something went wrong",
+        variant: "destructive",
+      });
     }
     setLoading(false);
   };

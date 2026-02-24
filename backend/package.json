@@ -1,0 +1,27 @@
+{
+  "name": "planify-backend",
+  "version": "1.0.0",
+  "description": "Backend built with - Express, Prisma, JWT",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "build": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:push": "prisma db push",
+    "db:setup": "node scripts/setup-db.js",
+    "db:seed": "node prisma/seed.js",
+    "test:db": "node --test test/db-connection.test.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.0",
+    "prisma": "^5.22.0"
+  }
+}
