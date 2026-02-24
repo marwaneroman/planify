@@ -1,73 +1,159 @@
-# Welcome to your Lovable project
+# Custom Backend (Supabase Replacement)
 
-## Project info
+This document describes the backend of the app.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Stack
 
-## How can I edit this code?
+- **Runtime**: Node.js
+- **Framework**: Express.js
+- **Database**: PostgreSQL
+- **ORM**: Prisma
+- **Auth**: JWT (JSON Web Tokens)
 
-There are several ways of editing your application.
+## Project Structure
 
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```
+backend/
+├── server.js           # Entry point
+├── package.json
+├── .env.example        # Environment template
+├── lib/
+│   └── prisma.js       # Prisma client
+├── middleware/
+│   └── auth.js         # JWT auth middleware
+├── controllers/
+│   ├── authController.js
+│   └── apiController.js
+├── routes/
+│   ├── auth.js         # /auth/login, /auth/register, /auth/me
+│   └── api.js          # /api/* routes
+└── prisma/
+    ├── schema.prisma
+    └── migrations/
 ```
 
-**Edit a file directly in GitHub**
+## Environment Variables
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+Create a `.env` file in the `backend/` folder:
 
-**Use GitHub Codespaces**
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@localhost:5432/dbname` |
+| `JWT_SECRET` | Secret for signing JWTs | Use a long random string in production |
+| `PORT` | Server port | `3001` |
+| `CORS_ORIGIN` | Allowed frontend origin | `http://localhost:8080` |
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Setup
 
-## What technologies are used for this project?
+### 1. Install dependencies
 
-This project is built with:
+```bash
+cd backend
+npm install
+```
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### 2. Configure environment
 
-## How can I deploy this project?
+```bash
+cp .env.example .env
+# Edit .env with your database URL and JWT secret
+```
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+### 3. Create database and user (first time only)
 
-## Can I connect a custom domain to my Lovable project?
+If your PostgreSQL does not yet have the user or database from `DATABASE_URL`:
 
-Yes, you can!
+1. In `backend/.env`, set an admin URL so the app can create them (use your real postgres password):
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+   ```env
+   POSTGRES_ADMIN_URL="postgresql://postgres:YOUR_POSTGRES_PASSWORD@localhost:5432/postgres"
+   ```
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+2. From the `backend` folder run:
+
+   ```bash
+   npm run db:setup
+   ```
+
+   This creates the user and database from your `DATABASE_URL`. Then run:
+
+   ```bash
+   npm run build
+   npm run db:push
+   ```
+
+   To verify the connection: `npm run test:db`
+
+If you prefer to create the user/database yourself (e.g. in pgAdmin or psql), skip `db:setup` and ensure `DATABASE_URL` points at an existing database, then run `npm run build` and `npm run db:push`.
+
+### 4. Start the backend
+
+```bash
+npm start          # Production
+npm run dev        # Development (with --watch)
+```
+
+## API Endpoints
+
+### Auth
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/auth/register` | Register (body: `{ email, password, full_name? }`) |
+| POST | `/auth/login` | Login (body: `{ email, password }`) |
+| GET | `/auth/me` | Current user (requires `Authorization: Bearer <token>`) |
+
+### Organizations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/organizations` | Create org |
+| GET | `/api/organizations` | List orgs |
+| GET | `/api/organizations/:orgId` | Get org |
+| GET | `/api/organizations/:orgId/members` | List members |
+
+### Projects
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/organizations/:orgId/projects` | List projects |
+| POST | `/api/organizations/:orgId/projects` | Create project |
+| GET | `/api/projects/:projectId` | Get project |
+
+### Tasks
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/projects/:projectId/tasks` | List tasks |
+| POST | `/api/projects/:projectId/tasks` | Create task |
+| PATCH | `/api/tasks/:taskId` | Update task |
+
+### Comments & Activity
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/tasks/:taskId/comments` | List comments |
+| POST | `/api/tasks/:taskId/comments` | Add comment |
+| POST | `/api/organizations/:orgId/activity` | Log activity |
+| GET | `/api/organizations/:orgId/activity` | List activity |
+| GET | `/api/organizations/:orgId/analytics` | Get analytics |
+
+## Frontend Configuration
+
+Create or update `.env` in the project root:
+
+```
+VITE_API_URL=http://localhost:3001
+```
+
+For production, set `VITE_API_URL` to your deployed backend URL.
+
+
+## Deployment
+
+1. Set all environment variables in your hosting platform.
+2. Run `npm run build` (generates Prisma client).
+3. Run `npx prisma migrate deploy` or `prisma db push` against your production DB.
+4. Run `npm start`.
+
+The backend listens on `PORT` (default 3001) and serves the API.
