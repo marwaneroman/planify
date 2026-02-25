@@ -1,0 +1,42 @@
+# Dependencies (reinstalled in container)
+node_modules
+**/node_modules
+
+# Build output
+dist
+dist-ssr
+*.local
+
+# Git and IDE
+.git
+.gitignore
+.cursor
+.vscode
+*.swp
+*.swo
+
+# Env and secrets (never in image)
+.env
+.env.*
+!.env.example
+
+# Docs and dev
+*.md
+*.log
+npm-debug.log*
+.DS_Store
+
+# Tests (not needed in production image)
+**/*.test.*
+**/*.spec.*
+**/__tests__
+**/coverage
+
+# Backend (frontend build does not need it)
+backend
+
+# Docker (avoid recursive copy)
+Dockerfile*
+.dockerignore
+docker-compose*
+.docker

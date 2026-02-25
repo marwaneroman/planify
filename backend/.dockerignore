@@ -1,0 +1,35 @@
+# Dependencies (reinstalled in container)
+node_modules
+
+# Env and secrets (never bake into image)
+.env
+.env.*
+!.env.example
+
+# Git and IDE
+.git
+.gitignore
+.cursor
+.vscode
+*.swp
+*.swo
+
+# Docs and dev
+*.md
+*.log
+npm-debug.log*
+.DS_Store
+
+# Tests (not needed in production image)
+**/*.test.*
+**/*.spec.*
+**/__tests__
+**/coverage
+test
+
+# Scripts not needed at runtime (optional: keep if you run db:seed in image)
+# scripts
+
+# Docker
+Dockerfile*
+.dockerignore
