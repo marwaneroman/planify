@@ -28,7 +28,6 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       NODE_ENV: production
       PORT: 3000
-      # Allow browser origin when app is served at http://localhost (Nginx on port 80)
       CORS_ORIGIN: "http://localhost,http://127.0.0.1"
     depends_on:
       db:

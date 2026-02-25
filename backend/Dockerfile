@@ -1,7 +1,5 @@
 # syntax=docker/dockerfile:1
-# ============================================
 # Stage 1 — Dependencies and Prisma client
-# ============================================
 FROM node:20-slim AS deps
 
 WORKDIR /app
@@ -17,16 +15,14 @@ COPY prisma ./prisma/
 RUN npm ci --prefer-offline --no-audit --no-fund \
     && npx prisma generate
 
-# ============================================
-# Stage 2 — Production runtime (smaller image)
-# ============================================
+# Stage 2 — Production runtime
 FROM node:20-slim AS runner
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Runtime deps: OpenSSL for Prisma, curl for healthcheck
+# Runtime deps: OpenSSL for Prisma
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
@@ -45,7 +41,7 @@ COPY --from=deps /app/prisma ./prisma
 # App code (no node_modules, no .env — use runtime env only)
 COPY . .
 
-# Prune devDependencies to shrink image, then set ownership
+# Prune devDependencies to shrink image
 RUN npm prune --omit=dev \
     && chown -R appuser:appgroup /app
 

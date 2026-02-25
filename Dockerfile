@@ -1,7 +1,5 @@
 # syntax=docker/dockerfile:1
-# ============================================
 # Stage 1 — Build (cached; only re-runs when deps or source change)
-# ============================================
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -15,14 +13,10 @@ COPY . .
 ENV NODE_ENV=production
 RUN npm run build
 
-# ============================================
-# Stage 2 — Serve (minimal runtime image)
-# ============================================
+# Stage 2 — Serve 
 FROM nginx:1.27-alpine AS runner
 
-# Use both configs from nginx/ folder:
-# - Main config (worker, events, http with gzip, rate limit, security headers)
-# - Server block in conf.d (included by main config)
+# Use configs from nginx/ folder:
 RUN rm -rf /etc/nginx/conf.d/*
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
