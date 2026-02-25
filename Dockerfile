@@ -20,10 +20,12 @@ RUN npm run build
 # ============================================
 FROM nginx:1.27-alpine AS runner
 
-# Remove default config so we fully control it
+# Use both configs from nginx/ folder:
+# - Main config (worker, events, http with gzip, rate limit, security headers)
+# - Server block in conf.d (included by main config)
 RUN rm -rf /etc/nginx/conf.d/*
-
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx/nginx.conf /etc/nginx/nginx.conf
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder --chown=nginx:nginx /app/dist /usr/share/nginx/html
 
 EXPOSE 80
