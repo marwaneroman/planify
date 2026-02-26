@@ -81,8 +81,8 @@ Deployment is done by running the full stack with Docker Compose. The frontend i
 ### 1. Clone and set environment variables
 
 ```bash
-git clone <repo-url>
-cd planify
+git clone https://github.com/marwaneroman/Planify.git
+cd Planify
 cp .env.example .env
 ```
 
@@ -111,7 +111,7 @@ docker compose up --build -d
 
 ### 3. Use the app
 
-- Open **http://localhost** in your browser.
+- Open **http://localhost:80** in your browser.
 - Sign up or sign in; all API calls go through Nginx to the backend.
 
 ### Useful commands
@@ -173,10 +173,4 @@ PostgreSQL must be running (local install or a separate Docker container). Point
 - **Projects & tasks**: CRUD under `/api/organizations/:id/projects` and `/api/projects/:id/tasks`.
 - **Comments & activity**: `/api/tasks/:id/comments`, `/api/organizations/:id/activity`, analytics.
 
-For full endpoint details and request/response shapes, see **[BACKEND.md](./BACKEND.md)**.
-
 ---
-
-## License
-
-Private / All rights reserved (adjust as needed).
