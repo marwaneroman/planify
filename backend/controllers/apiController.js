@@ -38,12 +38,20 @@ export async function createOrganization(req, res) {
 }
 
 export async function fetchOrganizations(req, res) {
+  const user = req.user;
+
   const orgs = await prisma.organization.findMany({
+    where: {
+      members: {
+        some: { userId: user.id }, // ← seulement les orgs où l'user est membre
+      },
+    },
     orderBy: { createdAt: "desc" },
     include: {
       members: { select: { id: true } },
     },
   });
+
   const result = orgs.map((o) => {
     const { members, ...rest } = o;
     return snakeKeys({
