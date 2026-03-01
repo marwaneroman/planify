@@ -465,6 +465,7 @@ export async function cancelInvitation(req, res) {
   await prisma.invitation.delete({ where: { id: invitationId } });
   return res.json({ message: "Invitation cancelled" });
 }
+
 // ─── AJOUTE CES FONCTIONS À LA FIN DE backend/controllers/apiController.js ───
 
 export async function deleteProject(req, res) {
