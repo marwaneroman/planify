@@ -76,8 +76,8 @@ if (user) {
         .flip-scene {
           perspective: 1200px;
           width: 100%;
-          /* hauteur fixe = carte Register (la plus grande) */
-          height: 490px;
+          height: ${flipped ? "490px" : "380px"};
+          transition: height 0.6s cubic-bezier(0.45, 0, 0.55, 1);
         }
 
         .flip-card {

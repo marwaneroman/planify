@@ -6,6 +6,7 @@ import {
   fetchComments, addComment, logActivity, fetchOrgMembers,
 } from "@/services/api";
 import { useOrgRole, canCreateTask, canDeleteTask } from "@/hooks/useOrgRole";
+import { UserAvatar } from "@/components/UserAvatar";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -79,9 +80,7 @@ const ProjectDetail = () => {
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, updates }: { id: string; updates: Record<string, any> }) =>
       updateTask(id, updates),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks", projectId] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tasks", projectId] }),
   });
 
   const deleteTaskMutation = useMutation({
@@ -92,9 +91,7 @@ const ProjectDetail = () => {
       setSelectedTask(null);
       queryClient.invalidateQueries({ queryKey: ["tasks", projectId] });
     },
-    onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -142,8 +139,6 @@ const ProjectDetail = () => {
           <h1 className="text-2xl font-bold text-foreground">{project?.name}</h1>
           <p className="text-sm text-muted-foreground">{project?.description || "No description"}</p>
         </div>
-
-        {/* Only admin, manager, member can create tasks */}
         {canCreateTask(role) && (
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
@@ -233,7 +228,6 @@ const ProjectDetail = () => {
                     className="cursor-pointer border-border transition-all hover:border-primary/20 hover:shadow-sm group relative"
                     onClick={() => setSelectedTask(task)}
                   >
-                    {/* Delete button — only admin & manager */}
                     {canDeleteTask(role) && (
                       <button
                         onClick={(e) => { e.stopPropagation(); setConfirmDeleteTaskId(task.id); }}
@@ -255,8 +249,12 @@ const ProjectDetail = () => {
                           </span>
                         )}
                       </div>
+                      {/* Avatar on task */}
                       {task.profiles?.full_name && (
-                        <p className="mt-2 text-xs text-muted-foreground">→ {task.profiles.full_name}</p>
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <UserAvatar name={task.profiles.full_name} size="sm" />
+                          <span className="text-xs text-muted-foreground">{task.profiles.full_name}</span>
+                        </div>
                       )}
                     </CardContent>
                   </Card>
@@ -325,7 +323,7 @@ const ProjectDetail = () => {
                   </div>
                 </div>
 
-                {/* Comments */}
+                {/* Comments with avatars */}
                 <div className="border-t border-border pt-4">
                   <div className="mb-3 flex items-center gap-2">
                     <MessageSquare className="h-4 w-4 text-muted-foreground" />
@@ -333,16 +331,23 @@ const ProjectDetail = () => {
                   </div>
                   <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
                     {comments?.map((comment: any) => (
-                      <div key={comment.id} className="rounded-md bg-muted p-3">
-                        <div className="mb-1 flex items-center justify-between">
-                          <span className="text-xs font-medium text-foreground">
-                            {comment.profiles?.full_name || "Unknown"}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
-                          </span>
+                      <div key={comment.id} className="flex gap-2.5">
+                        <UserAvatar
+                          name={comment.profiles?.full_name}
+                          size="sm"
+                          className="mt-0.5 shrink-0"
+                        />
+                        <div className="flex-1 rounded-md bg-muted p-2.5">
+                          <div className="mb-1 flex items-center justify-between">
+                            <span className="text-xs font-medium text-foreground">
+                              {comment.profiles?.full_name || "Unknown"}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+                            </span>
+                          </div>
+                          <p className="text-sm text-foreground">{comment.content}</p>
                         </div>
-                        <p className="text-sm text-foreground">{comment.content}</p>
                       </div>
                     ))}
                     {(!comments || comments.length === 0) && (

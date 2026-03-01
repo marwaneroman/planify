@@ -5,6 +5,7 @@ import {
   BarChart3, LogOut, ChevronRight, Users
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/UserAvatar";
 import { cn } from "@/lib/utils";
 
 interface AppLayoutProps {
@@ -29,6 +30,8 @@ export const AppLayout = ({ children, orgId, orgName, breadcrumbs }: AppLayoutPr
   const { signOut, user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const fullName = user?.user_metadata?.full_name;
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -71,9 +74,16 @@ export const AppLayout = ({ children, orgId, orgName, breadcrumbs }: AppLayoutPr
           })}
         </nav>
 
+        {/* User section with avatar */}
         <div className="border-t border-border p-3">
-          <div className="mb-2 truncate px-3 text-xs text-muted-foreground">
-            {user?.email}
+          <div className="mb-2 flex items-center gap-2.5 px-1">
+            <UserAvatar name={fullName} email={user?.email} size="sm" />
+            <div className="min-w-0">
+              {fullName && (
+                <p className="truncate text-xs font-medium text-foreground">{fullName}</p>
+              )}
+              <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+            </div>
           </div>
           <Button
             variant="ghost"
