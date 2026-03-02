@@ -12,16 +12,27 @@
     "db:push": "prisma db push",
     "db:setup": "node scripts/setup-db.js",
     "db:seed": "node prisma/seed.js",
-    "test:db": "node --test test/db-connection.test.js"
+    "test": "cross-env NODE_ENV=test node run-tests.mjs",
+    "test:unit": "cross-env NODE_ENV=test node run-tests.mjs unit",
+    "test:integration": "cross-env NODE_ENV=test node run-tests.mjs integration",
+    "test:db": "node --test __tests__/db-connection.test.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
-    "dotenv": "^16.4.5",
     "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.13.0",
     "prisma": "^5.22.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "cross-env": "^7.0.3",
+    "eslint": "^10.0.2",
+    "globals": "^17.3.0",
+    "jest": "^30.2.0",
+    "supertest": "^7.0.0"
   }
 }

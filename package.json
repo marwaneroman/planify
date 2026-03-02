@@ -1,0 +1,18 @@
+{
+  "name": "planify",
+  "private": true,
+  "description": "Planify monorepo — run tests from backend/ and frontend/",
+  "scripts": {
+    "test": "npm run test:unit --prefix backend && npm run test --prefix frontend",
+    "test:backend": "npm run test --prefix backend",
+    "test:frontend": "npm run test --prefix frontend",
+    "test:e2e": "npm run test:e2e --prefix frontend"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^9.39.3",
+    "eslint-plugin-react": "^7.37.5",
+    "globals": "^17.3.0",
+    "typescript-eslint": "^8.56.1"
+  }
+}

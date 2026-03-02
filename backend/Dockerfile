@@ -12,8 +12,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install all deps (needed for prisma generate); cache invalidated when package*.json change
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma/
-RUN npm ci --prefer-offline --no-audit --no-fund \
-    && npx prisma generate
+
+# Make npm more tolerant of slow networks in Docker
+RUN npm config set fetch-retries 5 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm config set fetch-timeout 600000
+
+RUN npm ci --no-audit --no-fund
+RUN npx prisma generate
+
 
 # Stage 2 — Production runtime
 FROM node:20-slim AS runner
