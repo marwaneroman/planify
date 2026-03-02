@@ -57,6 +57,7 @@ jobs:
         run: npm run test:db
         env:
           DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test?schema=public"
+          REQUIRE_DB_TEST: "true"
 
       - name: Run backend integration tests
         run: npx prisma db push --accept-data-loss && npm run test:integration
