@@ -4,9 +4,9 @@ name: Test
 
 on:
   push:
-    branches: [main, master]
+    branches: [integrate, master]
   pull_request:
-    branches: [main, master]
+    branches: [integrate, master]
 
 env:
   NODE_VERSION: "20"
