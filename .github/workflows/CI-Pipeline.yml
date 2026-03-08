@@ -56,14 +56,14 @@ jobs:
       - name: Run backend DB connection check
         run: npm run test:db
         env:
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test?schema=public"
           REQUIRE_DB_TEST: "true"
 
       - name: Run backend integration tests
         run: npx prisma db push --accept-data-loss && npm run test:integration
         env:
           NODE_ENV: test
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test?schema=public"
           JWT_SECRET: test-secret-for-ci
 
   frontend-test:
