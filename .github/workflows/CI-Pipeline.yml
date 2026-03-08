@@ -63,7 +63,7 @@ jobs:
         run: npx prisma db push --accept-data-loss && npm run test:integration
         env:
           NODE_ENV: test
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test?schema=public"
+          DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/planify_test?schema=public"
           JWT_SECRET: test-secret-for-ci
 
   frontend-test:
