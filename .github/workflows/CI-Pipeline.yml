@@ -56,7 +56,7 @@ jobs:
       - name: Run backend DB connection check
         run: npm run test:db
         env:
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test"
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test?schema=public"
           REQUIRE_DB_TEST: "true"
 
       - name: Run backend integration tests
@@ -115,11 +115,11 @@ jobs:
 
       - name: Run E2E tests
         run: |
-          npx vite preview --port 4173 &
-          sleep 5
+          npx vite preview --host 0.0.0.0 --port 4173 &
+          npx wait-on http://127.0.0.1:4173
           npx playwright test --project=chromium
         env:
-          PLAYWRIGHT_BASE_URL: "http://localhost:4173"
+          PLAYWRIGHT_BASE_URL: "http://127.0.0.1:4173"
 
   full-test:
     name: Full test summary
