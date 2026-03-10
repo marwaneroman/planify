@@ -8,7 +8,7 @@ router.use(authMiddleware);
 
 // Organizations
 router.post("/organizations", requireAuth, apiController.createOrganization);
-router.get("/organizations", apiController.fetchOrganizations);
+router.get("/organizations", requireAuth, apiController.fetchOrganizations);
 router.get("/organizations/:orgId", apiController.fetchOrganization);
 router.get("/organizations/:orgId/members", apiController.fetchOrgMembers);
 
