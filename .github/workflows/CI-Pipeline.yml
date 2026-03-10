@@ -53,17 +53,30 @@ jobs:
         env:
           NODE_ENV: test
 
+      - name: Wait for Postgres
+        env:
+          PGPORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          for i in $(seq 1 30); do
+            if (echo >/dev/tcp/127.0.0.1/$PGPORT) 2>/dev/null; then echo "Postgres ready"; exit 0; fi
+            echo "Waiting for Postgres on port $PGPORT..."
+            sleep 1
+          done
+          echo "Postgres did not become ready"
+          exit 1
+
       - name: Run backend DB connection check
         run: npm run test:db
         env:
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test?schema=public"
+          NODE_ENV: test
+          DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/planify_test?schema=public&connect_timeout=10"
           REQUIRE_DB_TEST: "true"
 
       - name: Run backend integration tests
         run: npx prisma db push --accept-data-loss && npm run test:integration
         env:
           NODE_ENV: test
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test"
+          DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/planify_test?schema=public"
           JWT_SECRET: test-secret-for-ci
 
   frontend-test:
