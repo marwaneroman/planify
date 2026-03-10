@@ -100,7 +100,7 @@ frontend/
 
 ## CI/CD (GitHub Actions)
 
-Workflow: `.github/workflows/test.yml`
+Workflow: `.github/workflows/CI-Pipeline.yml`
 
 | Job | What it runs |
 |-----|----------------|
