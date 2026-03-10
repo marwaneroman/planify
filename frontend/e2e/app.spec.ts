@@ -8,14 +8,14 @@ test.describe("App navigation and pages", () => {
   test("unauthenticated user is redirected to auth page from home", async ({ page }) => {
     await page.goto("/");
     await expect(page).toHaveURL(/\/(auth|auth\?.*)/);
-    await expect(page.getByText(/sign in|welcome back|planify/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /welcome back/i })).toBeVisible();
   });
 
   test("auth page shows login form", async ({ page }) => {
     await page.goto("/auth");
     await expect(page.getByRole("heading", { name: /welcome back/i })).toBeVisible();
-    await expect(page.getByPlaceholder(/email|you@company/i)).toBeVisible();
-    await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
+    await expect(page.locator("#email-login")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in" }).first()).toBeVisible();
   });
 
   test("404 page is shown for unknown route", async ({ page }) => {
