@@ -53,30 +53,18 @@ jobs:
         env:
           NODE_ENV: test
 
-      - name: Wait for Postgres
-        env:
-          PGPORT: ${{ job.services.postgres.ports[5432] }}
-        run: |
-          for i in $(seq 1 30); do
-            if (echo >/dev/tcp/127.0.0.1/$PGPORT) 2>/dev/null; then echo "Postgres ready"; exit 0; fi
-            echo "Waiting for Postgres on port $PGPORT..."
-            sleep 1
-          done
-          echo "Postgres did not become ready"
-          exit 1
-
       - name: Run backend DB connection check
-        run: npm run test:db
+        run: timeout 45 npm run test:db
         env:
           NODE_ENV: test
-          DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/planify_test?schema=public&connect_timeout=10"
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test?schema=public&connect_timeout=5"
           REQUIRE_DB_TEST: "true"
 
       - name: Run backend integration tests
-        run: npx prisma db push --accept-data-loss && npm run test:integration
+        run: timeout 120 npx prisma db push --accept-data-loss && npm run test:integration
         env:
           NODE_ENV: test
-          DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/planify_test?schema=public"
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test?schema=public&connect_timeout=5"
           JWT_SECRET: test-secret-for-ci
 
   frontend-test:
@@ -127,12 +115,10 @@ jobs:
         run: npm run build
 
       - name: Run E2E tests
-        run: |
-          npx vite preview --host 0.0.0.0 --port 4173 &
-          npx wait-on http://127.0.0.1:4173
-          npx playwright test --project=chromium
+        run: npx playwright test --project=chromium
         env:
-          PLAYWRIGHT_BASE_URL: "http://127.0.0.1:4173"
+          CI: "true"
+          PLAYWRIGHT_BASE_URL: "http://localhost:4173"
 
   full-test:
     name: Full test summary

@@ -23,11 +23,16 @@ export default defineConfig({
     { name: "webkit", use: { ...devices["Desktop Safari"] } },
   ],
   webServer: process.env.CI
-    ? undefined
+    ? {
+        command: "npx vite preview --port 4173 --host 0.0.0.0",
+        url: "http://localhost:4173",
+        reuseExistingServer: false,
+        timeout: 60_000,
+      }
     : {
         command: "npm run dev",
         url: "http://localhost:8080",
-        reuseExistingServer: !process.env.CI,
-        timeout: 120000,
+        reuseExistingServer: true,
+        timeout: 120_000,
       },
 });
