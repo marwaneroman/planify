@@ -15,7 +15,8 @@
     "test": "cross-env NODE_ENV=test node run-tests.mjs",
     "test:unit": "cross-env NODE_ENV=test node run-tests.mjs unit",
     "test:integration": "cross-env NODE_ENV=test node run-tests.mjs integration",
-    "test:db": "node --test __tests__/db-connection.test.js"
+    "test:db": "node --test __tests__/db-connection.test.js",
+    "lint" : "eslint ."
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
