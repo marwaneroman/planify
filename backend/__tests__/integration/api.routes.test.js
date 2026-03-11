@@ -10,7 +10,6 @@ import { prisma } from "../../lib/prisma.js";
 
 let authToken;
 const testEmail = `test-api-${Date.now()}@example.com`;
-const testPassword = "TestPassword123";
 let testUserId;
 let orgId;
 

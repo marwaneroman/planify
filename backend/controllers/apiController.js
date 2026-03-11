@@ -15,13 +15,6 @@ async function ensureProfile(userId, fullName = "") {
   });
 }
 
-async function isOrgMember(userId, orgId) {
-  const m = await prisma.organizationMember.findFirst({
-    where: { organizationId: orgId, userId },
-  });
-  return !!m;
-}
-
 // Organizations
 export async function createOrganization(req, res) {
   const { name, description } = req.body;
@@ -181,7 +174,6 @@ export async function createTask(req, res) {
 export async function updateTask(req, res) {
   const { taskId } = req.params;
   const updates = req.body;
-  const allowed = ["title", "description", "status", "priority", "assignee_id", "assigneeId", "due_date", "dueDate"];
   const data = {};
   if (updates.title !== undefined) data.title = updates.title;
   if (updates.description !== undefined) data.description = updates.description;

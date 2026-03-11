@@ -16,7 +16,9 @@ function isAllowedOrigin(origin) {
   try {
     const u = new URL(origin);
     if (u.hostname === "localhost" || u.hostname === "127.0.0.1") return true;
-  } catch (_) {}
+  } catch {
+    // invalid URL, do nothing
+  }
   return false;
 }
 const corsOptions = {
