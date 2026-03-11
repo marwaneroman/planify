@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/lib/apiClient";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,6 @@ const Auth = () => {
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
   const [flipped, setFlipped] = useState(false);
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
 
@@ -60,10 +59,11 @@ if (user) {
           toast({ title: "Account created", description: "Welcome!" });
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Something went wrong";
       toast({
         title: isLogin ? "Login failed" : "Sign up failed",
-        description: err.message || "Something went wrong",
+        description: message,
         variant: "destructive",
       });
     }
@@ -171,7 +171,7 @@ if (user) {
                       </Button>
                     </form>
                     <div className="mt-4 text-center text-sm text-muted-foreground">
-                      Don't have an account?{" "}
+                      Don&apos;t have an account?{" "}
                       <button onClick={handleToggle} className="font-medium text-primary hover:underline">
                         Sign up
                       </button>

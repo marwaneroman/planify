@@ -1,6 +1,6 @@
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import React, { useState } from "react";
 import { fetchOrganization, fetchOrgMembers, updateMemberRole, removeMember } from "@/services/api";
 import { AppLayout } from "@/components/AppLayout";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -18,7 +18,7 @@ const roleColors: Record<string, string> = {
   member: "text-muted-foreground bg-muted",
 };
 
-const roleIcons: Record<string, any> = {
+const roleIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   admin: Shield,
   manager: UserCheck,
   member: User,
@@ -43,7 +43,7 @@ const Members = () => {
     enabled: !!orgId,
   });
 
-  const currentMember = (members as any[])?.find((m) => m.user_id === user?.id);
+  const currentMember = (members as { user_id: string; role: string }[] | undefined)?.find((m) => m.user_id === user?.id);
   const currentRole = currentMember?.role || "member";
   const isAdmin = currentRole === "admin";
 
@@ -54,8 +54,8 @@ const Members = () => {
       toast({ title: "Role updated" });
       queryClient.invalidateQueries({ queryKey: ["org-members", orgId] });
     },
-    onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+    onError: (err: unknown) => {
+      toast({ title: "Error", description: err instanceof Error ? err.message : "Error", variant: "destructive" });
     },
   });
 
@@ -66,8 +66,8 @@ const Members = () => {
       setConfirmRemoveId(null);
       queryClient.invalidateQueries({ queryKey: ["org-members", orgId] });
     },
-    onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+    onError: (err: unknown) => {
+      toast({ title: "Error", description: err instanceof Error ? err.message : "Error", variant: "destructive" });
       setConfirmRemoveId(null);
     },
   });
@@ -173,7 +173,7 @@ const Members = () => {
             <div className="space-y-2">
               {[1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-muted" />)}
             </div>
-          ) : (members as any[])?.map((member) => {
+          ) : (members as { id: string; user_id: string; role: string; profiles?: { full_name?: string } }[])?.map((member) => {
             const RoleIcon = roleIcons[member.role] || User;
             const isCurrentUser = member.user_id === user?.id;
             const name = member.profiles?.full_name;

@@ -36,8 +36,8 @@ const Index = () => {
       setDescription("");
       refetch();
       navigate(`/org/${org.id}`);
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Error", description: err instanceof Error ? err.message : "Something went wrong", variant: "destructive" });
     }
     setCreating(false);
   };
@@ -106,7 +106,7 @@ const Index = () => {
                 </p>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Users className="h-3 w-3" />
-                  {(org as any).organization_members?.[0]?.count || 0} members
+                  {(org as { organization_members?: { count?: number }[] }).organization_members?.[0]?.count ?? 0} members
                 </div>
               </CardContent>
             </Card>

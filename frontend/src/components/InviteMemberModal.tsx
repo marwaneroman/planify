@@ -33,8 +33,9 @@ export const InviteMemberModal = ({ orgId, onClose }: Props) => {
       queryClient.invalidateQueries({ queryKey: ["org-members", orgId] });
       setEmail("");
     },
-    onError: (err: any) => {
-      toast({ title: "Erreur", description: err.message || "Une erreur est survenue", variant: "destructive" });
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "Une erreur est survenue";
+      toast({ title: "Erreur", description: message, variant: "destructive" });
     },
   });
 
@@ -133,7 +134,7 @@ export const InviteMemberModal = ({ orgId, onClose }: Props) => {
               <p className="text-sm text-muted-foreground">Loading...</p>
             ) : invitations && invitations.length > 0 ? (
               <div className="space-y-2 max-h-52 overflow-y-auto">
-                {invitations.map((inv: any) => (
+                {invitations.map((inv: { id: string; email: string; role: string }) => (
                   <div
                     key={inv.id}
                     className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 space-y-2"

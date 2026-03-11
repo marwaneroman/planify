@@ -44,7 +44,7 @@ const ProjectDetail = () => {
   const role = useOrgRole(orgId);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [selectedTask, setSelectedTask] = useState<{ id: string; title: string; status?: string; priority?: string } | null>(null);
   const [newComment, setNewComment] = useState("");
   const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -71,14 +71,14 @@ const ProjectDetail = () => {
     enabled: !!selectedTask,
   });
 
-  const { data: members } = useQuery({
+  useQuery({
     queryKey: ["org-members", orgId],
     queryFn: () => fetchOrgMembers(orgId!),
     enabled: !!orgId,
   });
 
   const updateTaskMutation = useMutation({
-    mutationFn: ({ id, updates }: { id: string; updates: Record<string, any> }) =>
+    mutationFn: ({ id, updates }: { id: string; updates: Record<string, unknown> }) =>
       updateTask(id, updates),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tasks", projectId] }),
   });
@@ -91,7 +91,7 @@ const ProjectDetail = () => {
       setSelectedTask(null);
       queryClient.invalidateQueries({ queryKey: ["tasks", projectId] });
     },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: unknown) => toast({ title: "Error", description: err instanceof Error ? err.message : "Error", variant: "destructive" }),
   });
 
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -104,8 +104,8 @@ const ProjectDetail = () => {
       setCreateOpen(false);
       setTitle(""); setDesc(""); setPriority("medium"); setStatus("backlog");
       queryClient.invalidateQueries({ queryKey: ["tasks", projectId] });
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Error", description: err instanceof Error ? err.message : "Error", variant: "destructive" });
     }
     setCreating(false);
   };
@@ -116,12 +116,12 @@ const ProjectDetail = () => {
       await addComment(selectedTask.id, newComment.trim());
       setNewComment("");
       refetchComments();
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Error", description: err instanceof Error ? err.message : "Error", variant: "destructive" });
     }
   };
 
-  const orgName = (project as any)?.organizations?.name;
+  const orgName = (project as { organizations?: { name?: string } })?.organizations?.name;
 
   return (
     <AppLayout
@@ -212,7 +212,7 @@ const ProjectDetail = () => {
       {/* Kanban Board */}
       <div className="flex gap-4 overflow-x-auto pb-4">
         {statusColumns.map((col) => {
-          const colTasks = tasks?.filter((t: any) => t.status === col.key) || [];
+          const colTasks = tasks?.filter((t: { status?: string }) => t.status === col.key) || [];
           return (
             <div key={col.key} className="w-64 flex-shrink-0">
               <div className="mb-3 flex items-center gap-2 px-1">
@@ -222,7 +222,7 @@ const ProjectDetail = () => {
                 </span>
               </div>
               <div className="space-y-2">
-                {colTasks.map((task: any) => (
+                {colTasks.map((task: { id: string; title: string; status?: string; priority?: string; due_date?: string; profiles?: { full_name?: string }; description?: string }) => (
                   <Card
                     key={task.id}
                     className="cursor-pointer border-border transition-all hover:border-primary/20 hover:shadow-sm group relative"
@@ -330,7 +330,7 @@ const ProjectDetail = () => {
                     <h4 className="text-sm font-semibold text-foreground">Comments</h4>
                   </div>
                   <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
-                    {comments?.map((comment: any) => (
+                    {comments?.map((comment: { id: string; content: string; profiles?: { full_name?: string }; created_at?: string }) => (
                       <div key={comment.id} className="flex gap-2.5">
                         <UserAvatar
                           name={comment.profiles?.full_name}

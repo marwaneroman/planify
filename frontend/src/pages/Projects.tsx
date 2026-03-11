@@ -44,8 +44,8 @@ const Projects = () => {
       setConfirmDeleteId(null);
       queryClient.invalidateQueries({ queryKey: ["projects", orgId] });
     },
-    onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+    onError: (err: unknown) => {
+      toast({ title: "Error", description: err instanceof Error ? err.message : "Error", variant: "destructive" });
     },
   });
 
@@ -60,8 +60,8 @@ const Projects = () => {
       setName("");
       setDescription("");
       queryClient.invalidateQueries({ queryKey: ["projects", orgId] });
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Error", description: err instanceof Error ? err.message : "Error", variant: "destructive" });
     }
     setCreating(false);
   };
@@ -79,7 +79,7 @@ const Projects = () => {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Projects</h1>
-          <p className="text-sm text-muted-foreground">Manage your team's projects</p>
+          <p className="text-sm text-muted-foreground">Manage your team&apos;s projects</p>
         </div>
 
         {/* Only admin & manager can create projects */}
@@ -136,7 +136,7 @@ const Projects = () => {
         </div>
       ) : projects && projects.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project: any) => (
+          {projects.map((project: { id: string; name: string; description?: string; status: string }) => (
             <Card
               key={project.id}
               className="cursor-pointer border-border transition-all hover:border-primary/30 hover:shadow-md group relative"

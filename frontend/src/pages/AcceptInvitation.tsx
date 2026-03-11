@@ -32,9 +32,9 @@ const AcceptInvitation = () => {
         setOrgId(data.organization_id);
         setStatus("success");
         setMessage("You have successfully joined the organization!");
-      } catch (err: any) {
+      } catch (err: unknown) {
         setStatus("error");
-        setMessage(err.message || "This invitation is invalid or has expired.");
+        setMessage(err instanceof Error ? err.message : "This invitation is invalid or has expired.");
       }
     };
 

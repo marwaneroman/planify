@@ -22,7 +22,8 @@ export default defineConfig([
     rules: {
       "react/react-in-jsx-scope": "off",
       "react/jsx-uses-react": "off",
-      "@typescript-eslint/no-explicit-any": "warn",  // demote 'any' from error to warning
+      "react/prop-types": "off",
+      "@typescript-eslint/no-explicit-any": "warn",
     },
   },
 ]);

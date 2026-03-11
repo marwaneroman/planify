@@ -137,7 +137,7 @@ const OrgDashboard = () => {
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
-            {projects?.slice(0, 5).map((project: any) => (
+            {projects?.slice(0, 5).map((project: { id: string; name: string; status: string }) => (
               <div
                 key={project.id}
                 onClick={() => navigate(`/org/${orgId}/projects/${project.id}`)}
@@ -161,7 +161,7 @@ const OrgDashboard = () => {
           </CardHeader>
           <CardContent className="space-y-3">
             {activity && activity.length > 0 ? (
-              activity.map((item: any) => (
+              activity.map((item: { id: string; action: string; created_at: string; profiles?: { full_name?: string } }) => (
                 <div key={item.id} className="flex gap-3">
                   <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
                   <div>

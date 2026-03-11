@@ -14,7 +14,7 @@ export const useOrgRole = (orgId?: string): OrgRole => {
   });
 
   if (!members || !user) return null;
-  const me = (members as any[]).find((m) => m.user_id === user.id);
+  const me = (members as { user_id: string; role: string }[]).find((m) => m.user_id === user.id);
   return (me?.role as OrgRole) || null;
 };
 
