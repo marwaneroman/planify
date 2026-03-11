@@ -14,9 +14,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # ─────────────────────────────────────────────
   # 1. LINT
-  # ─────────────────────────────────────────────
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -42,9 +40,7 @@ jobs:
       - name: Lint
         run: npm run lint
 
-  # ─────────────────────────────────────────────
   # 2. UNIT TESTS (fast, no DB/network)
-  # ─────────────────────────────────────────────
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -85,9 +81,7 @@ jobs:
           path: ${{ matrix.workspace }}/coverage/
           retention-days: 7
 
-  # ─────────────────────────────────────────────
   # 3. BUILD DOCKER IMAGES
-  # ─────────────────────────────────────────────
   build:
     name: Build Docker Images
     runs-on: ubuntu-latest
@@ -157,9 +151,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ─────────────────────────────────────────────
   # 4. INTEGRATION TESTS (using containers)
-  # ─────────────────────────────────────────────
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
@@ -210,9 +202,7 @@ jobs:
           DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/planify_test?schema=public&connect_timeout=5"
           JWT_SECRET: test-secret-for-ci
 
-  # ─────────────────────────────────────────────
   # 5. E2E TESTS
-  # ─────────────────────────────────────────────
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-latest
@@ -254,9 +244,7 @@ jobs:
           path: frontend/playwright-report/
           retention-days: 7
 
-  # ─────────────────────────────────────────────
   # SUMMARY
-  # ─────────────────────────────────────────────
   summary:
     name: Pipeline Summary
     runs-on: ubuntu-latest
