@@ -9,7 +9,7 @@
     "test:e2e": "npm run test:e2e --prefix frontend"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "^9.39.3",
     "eslint": "^9.39.3",
     "eslint-plugin-react": "^7.37.5",
     "globals": "^17.3.0",

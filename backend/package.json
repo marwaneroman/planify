@@ -29,9 +29,9 @@
     "prisma": "^5.22.0"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "^9.39.3",
     "cross-env": "^7.0.3",
-    "eslint": "^10.0.3",
+    "eslint": "^9.39.3",
     "globals": "^17.4.0",
     "jest": "^30.2.0",
     "supertest": "^7.0.0",
