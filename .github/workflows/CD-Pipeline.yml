@@ -1,0 +1,544 @@
+# ================================================================
+#  CD Pipeline — AWS (ECR + ECS Fargate)
+# ================================================================
+#
+#  Architecture:
+#    GitHub Actions → ECR (signed image) → ECS Fargate
+#    Auth: OIDC (no long-lived AWS keys stored anywhere)
+#    Signing: Cosign keyless via GitHub OIDC
+#    Deployment: ECS native canary (10% → 100%) with CloudWatch
+#                alarm-based auto-rollback
+#
+#  Prerequisites (do these once before running):
+#    1. Run the bootstrap script:  ./scripts/bootstrap-aws.sh
+#       This creates the IAM OIDC provider, roles, and CW alarms.
+#    2. Create GitHub Environments in repo Settings → Environments:
+#         • staging    — no protection rules
+#         • production — add Required reviewers
+#    3. Set GitHub secrets (listed below)
+#
+#  Required GitHub Secrets:
+#    AWS_ACCOUNT_ID          — 12-digit AWS account number
+#    AWS_REGION              — e.g. us-east-1
+#    AWS_ROLE_ARN_STAGING    — IAM role ARN for staging deploys
+#    AWS_ROLE_ARN_PRODUCTION — IAM role ARN for prod deploys
+#    ECR_REPOSITORY          — ECR repo name (e.g. my-app)
+#    ECS_CLUSTER_STAGING     — ECS cluster name for staging
+#    ECS_CLUSTER_PRODUCTION  — ECS cluster name for production
+#    ECS_SERVICE_STAGING     — ECS service name for staging
+#    ECS_SERVICE_PRODUCTION  — ECS service name for production
+#    ECS_CONTAINER_NAME      — Container name in task definition
+#    CW_ALARM_STAGING        — CloudWatch alarm name for staging
+#    CW_ALARM_PRODUCTION     — CloudWatch alarm name for production
+#    SLACK_WEBHOOK_URL       — Slack incoming webhook
+#
+# ================================================================
+
+name: CD Pipeline (AWS)
+
+on:
+  workflow_run:
+    workflows: ["CI Pipeline"]   # ← match your CI workflow name exactly
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION:        ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID:    ${{ secrets.AWS_ACCOUNT_ID }}
+  ECR_REPOSITORY:    ${{ secrets.ECR_REPOSITORY }}
+  ECR_REGISTRY:      ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  IMAGE_TAG:         ${{ github.sha }}
+
+# ──────────────────────────────────────────────────────────────
+# 0. Guard — abort if CI did not pass
+# ──────────────────────────────────────────────────────────────
+jobs:
+  guard:
+    name: Guard — CI must pass
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: CI passed
+        run: echo "CI green — starting CD"
+
+  # ──────────────────────────────────────────────────────────────
+  # 1. Re-tag & sign the image that CI pushed to ECR
+  #
+  #    CI already pushed :latest to ECR.
+  #    We now add an immutable SHA tag and sign by digest.
+  #    No secrets in the pipeline — auth is via OIDC.
+  # ──────────────────────────────────────────────────────────────
+  sign-image:
+    name: Tag & sign image (keyless OIDC)
+    runs-on: ubuntu-latest
+    needs: guard
+
+    permissions:
+      id-token: write   # needed for OIDC → AWS + Cosign
+      contents: read
+
+    outputs:
+      image-uri:    ${{ steps.tag.outputs.image-uri }}
+      image-digest: ${{ steps.tag.outputs.image-digest }}
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
+          aws-region:     ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Pull the :latest image CI pushed, add an immutable SHA tag,
+      # and push both tags. We always deploy by SHA — never :latest.
+      - name: Add immutable SHA tag
+        id: tag
+        run: |
+          LATEST="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest"
+          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+
+          docker pull "$LATEST"
+          docker tag  "$LATEST" "$SHA_TAG"
+          docker push "$SHA_TAG"
+
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$SHA_TAG" \
+            | cut -d'@' -f2)
+
+          echo "image-uri=$SHA_TAG"       >> "$GITHUB_OUTPUT"
+          echo "image-digest=$DIGEST"     >> "$GITHUB_OUTPUT"
+          echo "Image: $SHA_TAG ($DIGEST)"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Sign by digest, not by tag — tags are mutable.
+      # The signature is stored as a .sig tag in the same ECR repo.
+      # For private ECR repos Cosign uses the existing Docker login.
+      - name: Sign image (keyless)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign --yes \
+            "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}@${{ steps.tag.outputs.image-digest }}"
+
+  # ──────────────────────────────────────────────────────────────
+  # 2. Deploy to staging (ECS rolling update)
+  # ──────────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy → staging (ECS)
+    runs-on: ubuntu-latest
+    needs: sign-image
+
+    environment:
+      name: staging
+      url:  https://staging.your-domain.com   # ← update
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout (for task definition file)
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC — staging role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region:     ${{ env.AWS_REGION }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Verify signature before deploying — unsigned images are rejected
+      - name: Verify image signature
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign verify \
+            --certificate-identity-regexp \
+              "https://github.com/${{ github.repository }}/.github/workflows/" \
+            --certificate-oidc-issuer \
+              "https://token.actions.githubusercontent.com" \
+            "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}@${{ needs.sign-image.outputs.image-digest }}"
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Download current task definition, swap the image, register new revision
+      - name: Download current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ secrets.ECS_SERVICE_STAGING }} \
+            --query taskDefinition \
+            > task-def-staging.json
+
+      - name: Render new task definition with updated image
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition:  task-def-staging.json
+          container-name:   ${{ secrets.ECS_CONTAINER_NAME }}
+          image:            ${{ needs.sign-image.outputs.image-uri }}
+
+      - name: Deploy to ECS staging (rolling update)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition:         ${{ steps.task-def.outputs.task-definition }}
+          service:                 ${{ secrets.ECS_SERVICE_STAGING }}
+          cluster:                 ${{ secrets.ECS_CLUSTER_STAGING }}
+          wait-for-service-stability: true
+          # If the new tasks don't stabilise, ECS rolls back automatically
+          # (deployment circuit breaker must be enabled on the ECS service)
+
+  # ──────────────────────────────────────────────────────────────
+  # 3a. Smoke tests (run in parallel with DAST)
+  # ──────────────────────────────────────────────────────────────
+  smoke-tests:
+    name: Smoke tests — staging
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Health & critical path checks
+        run: |
+          BASE="https://staging.your-domain.com"   # ← update
+
+          check() {
+            local url="$1" expected="$2"
+            local status
+            status=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 10 "$url")
+            if [ "$status" != "$expected" ]; then
+              echo "FAIL  $url → HTTP $status (expected $expected)"
+              exit 1
+            fi
+            echo "PASS  $url → HTTP $status"
+          }
+
+          check "$BASE/health"          "200"
+          check "$BASE/readiness"       "200"
+          check "$BASE/api/v1/status"   "200"
+          # Add your own critical paths here
+
+      - name: API contract check
+        run: |
+          BASE="https://staging.your-domain.com"   # ← update
+          BODY=$(curl -sf --max-time 10 "$BASE/api/v1/status")
+          echo "$BODY" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          assert 'status' in d,          'Missing status field'
+          assert d['status'] == 'ok',    f\"Unexpected status: {d['status']}\"
+          print('API contract OK')
+          "
+
+  # ──────────────────────────────────────────────────────────────
+  # 3b. DAST — OWASP ZAP baseline scan on staging
+  # ──────────────────────────────────────────────────────────────
+  dast:
+    name: DAST — OWASP ZAP (staging)
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    permissions:
+      issues: write   # ZAP action opens/updates a GitHub Issue with findings
+
+    steps:
+      - name: Checkout (for .zap/rules.tsv)
+        uses: actions/checkout@v4
+
+      - name: Run OWASP ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target:            "https://staging.your-domain.com"   # ← update
+          rules_file_name:   ".zap/rules.tsv"    # optional false-positive suppressions
+          fail_action:       true                 # fail on HIGH severity findings
+          artifact_name:     "zap-report"
+
+  # ──────────────────────────────────────────────────────────────
+  # 4. Approval gate — blocks production until a reviewer approves
+  #    in the GitHub Environments UI.
+  #
+  #    Setup: Settings → Environments → production
+  #           → Required reviewers → add your team
+  # ──────────────────────────────────────────────────────────────
+  approval-gate:
+    name: Approval gate
+    runs-on: ubuntu-latest
+    needs: [smoke-tests, dast]
+
+    environment:
+      name: production
+      url:  https://your-domain.com   # ← update
+
+    steps:
+      - name: Approved — proceeding to production
+        run: echo "Production deployment approved."
+
+  # ──────────────────────────────────────────────────────────────
+  # 5. Deploy to production
+  #
+  #    Uses ECS native canary deployment (announced Oct 2025):
+  #      • 10% traffic → new revision
+  #      • CloudWatch alarm monitors error rate during bake time
+  #      • If alarm fires → ECS auto-rolls back, no human needed
+  #      • If healthy → 100% traffic shifts to new revision
+  #
+  #    The canary config is set on the ECS service itself
+  #    (see bootstrap script). This job just triggers the deploy
+  #    and waits for stability.
+  # ──────────────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy → production (ECS canary 10%→100%)
+    runs-on: ubuntu-latest
+    needs: approval-gate
+
+    permissions:
+      id-token: write
+      contents: read
+
+    outputs:
+      previous-task-def: ${{ steps.get-current.outputs.previous-task-def }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC — production role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
+          aws-region:     ${{ env.AWS_REGION }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Defence in depth — verify again before touching production
+      - name: Verify image signature (pre-prod)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign verify \
+            --certificate-identity-regexp \
+              "https://github.com/${{ github.repository }}/.github/workflows/" \
+            --certificate-oidc-issuer \
+              "https://token.actions.githubusercontent.com" \
+            "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}@${{ needs.sign-image.outputs.image-digest }}"
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Store current task def ARN so rollback job can use it if needed
+      - name: Record current task definition (for rollback)
+        id: get-current
+        run: |
+          CURRENT=$(aws ecs describe-services \
+            --cluster "${{ secrets.ECS_CLUSTER_PRODUCTION }}" \
+            --services "${{ secrets.ECS_SERVICE_PRODUCTION }}" \
+            --query 'services[0].taskDefinition' \
+            --output text)
+          echo "previous-task-def=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Current task def: $CURRENT"
+
+      - name: Download current production task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${{ secrets.ECS_SERVICE_PRODUCTION }}" \
+            --query taskDefinition \
+            > task-def-prod.json
+
+      - name: Render new task definition (production image)
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition:  task-def-prod.json
+          container-name:   ${{ secrets.ECS_CONTAINER_NAME }}
+          image:            ${{ needs.sign-image.outputs.image-uri }}
+
+      # ECS native canary: 10% traffic to new revision.
+      # The service must have canary deployment configured
+      # (see bootstrap-aws.sh). ECS handles the traffic split
+      # via the ALB and monitors the CW alarm automatically.
+      - name: Deploy to ECS production (native canary)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition:            ${{ steps.task-def.outputs.task-definition }}
+          service:                    ${{ secrets.ECS_SERVICE_PRODUCTION }}
+          cluster:                    ${{ secrets.ECS_CLUSTER_PRODUCTION }}
+          wait-for-service-stability: true
+          # ECS circuit breaker + canary alarm handle rollback automatically.
+          # wait-for-service-stability=true means this step fails if ECS
+          # rolls back, which will surface the failure in the workflow.
+
+  # ──────────────────────────────────────────────────────────────
+  # 6. Observe — poll CloudWatch alarms for 5 minutes post-deploy
+  #    as a belt-and-suspenders check on top of ECS's own alarm.
+  # ──────────────────────────────────────────────────────────────
+  observe:
+    name: Observe production (5 min)
+    runs-on: ubuntu-latest
+    needs: deploy-production
+
+    permissions:
+      id-token: write
+      contents: read
+
+    outputs:
+      alarm-state: ${{ steps.check-alarm.outputs.alarm-state }}
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
+          aws-region:     ${{ env.AWS_REGION }}
+
+      # Wait for traffic to hit the new revision before sampling
+      - name: Wait 3 minutes for traffic to normalise
+        run: sleep 180
+
+      - name: Check CloudWatch alarm state
+        id: check-alarm
+        run: |
+          STATE=$(aws cloudwatch describe-alarms \
+            --alarm-names "${{ secrets.CW_ALARM_PRODUCTION }}" \
+            --query 'MetricAlarms[0].StateValue' \
+            --output text)
+
+          echo "Alarm state: $STATE"
+          echo "alarm-state=$STATE" >> "$GITHUB_OUTPUT"
+
+          if [ "$STATE" = "ALARM" ]; then
+            echo "CloudWatch alarm is in ALARM state — triggering rollback"
+            exit 1
+          fi
+
+          echo "Production looks healthy."
+
+  # ──────────────────────────────────────────────────────────────
+  # 7. Rollback — only runs if observe fails
+  #    Reverts ECS service to the previous task definition revision.
+  # ──────────────────────────────────────────────────────────────
+  rollback:
+    name: Auto rollback
+    runs-on: ubuntu-latest
+    needs: [deploy-production, observe]
+    if: ${{ failure() && needs.deploy-production.result == 'success' }}
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
+          aws-region:     ${{ env.AWS_REGION }}
+
+      - name: Roll back to previous task definition
+        run: |
+          PREVIOUS="${{ needs.deploy-production.outputs.previous-task-def }}"
+          echo "Rolling back to: $PREVIOUS"
+
+          aws ecs update-service \
+            --cluster "${{ secrets.ECS_CLUSTER_PRODUCTION }}" \
+            --service "${{ secrets.ECS_SERVICE_PRODUCTION }}" \
+            --task-definition "$PREVIOUS" \
+            --force-new-deployment
+
+          # Wait for rollback to stabilise
+          aws ecs wait services-stable \
+            --cluster "${{ secrets.ECS_CLUSTER_PRODUCTION }}" \
+            --services "${{ secrets.ECS_SERVICE_PRODUCTION }}"
+
+          echo "Rollback complete — $PREVIOUS is live"
+
+      - name: Alert Slack on rollback
+        if: always()
+        run: |
+          curl -s -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "text": "🚨 *Auto-rollback triggered* on production\nCommit: `${{ github.sha }}`\nCause: CloudWatch alarm breached\nRepo: ${{ github.repository }}\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }'
+
+  # ──────────────────────────────────────────────────────────────
+  # 8. Notify — success notification + audit record
+  # ──────────────────────────────────────────────────────────────
+  notify:
+    name: Notify & audit log
+    runs-on: ubuntu-latest
+    needs: [sign-image, deploy-production, observe]
+    if: ${{ success() }}
+
+    steps:
+      - name: Checkout (for changelog)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog since last tag
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~10")
+          CHANGES=$(git log "$LAST_TAG"..HEAD \
+            --pretty=format:"• %s (%h)" \
+            --no-merges | head -15)
+          echo "CHANGES<<EOF" >> "$GITHUB_ENV"
+          echo "$CHANGES"     >> "$GITHUB_ENV"
+          echo "EOF"          >> "$GITHUB_ENV"
+
+      - name: Post success to Slack
+        run: |
+          curl -s -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "text": "✅ *Production deployment successful*",
+              "attachments": [{
+                "color": "good",
+                "fields": [
+                  {"title":"Repo",       "value":"${{ github.repository }}", "short":true},
+                  {"title":"Commit",     "value":"`${{ github.sha }}`",       "short":true},
+                  {"title":"Actor",      "value":"${{ github.actor }}",        "short":true},
+                  {"title":"Region",     "value":"${{ env.AWS_REGION }}",      "short":true},
+                  {"title":"Image",      "value":"`${{ needs.sign-image.outputs.image-uri }}`", "short":false},
+                  {"title":"Run",        "value":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short":false}
+                ]
+              }]
+            }'
+
+      - name: Write deployment audit record
+        run: |
+          mkdir -p audit
+          cat > audit/deploy-$(date +%Y%m%d-%H%M%S).json << EOF
+          {
+            "timestamp":   "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit":      "${{ github.sha }}",
+            "actor":       "${{ github.actor }}",
+            "image_uri":   "${{ needs.sign-image.outputs.image-uri }}",
+            "digest":      "${{ needs.sign-image.outputs.image-digest }}",
+            "environment": "production",
+            "aws_region":  "${{ env.AWS_REGION }}",
+            "cluster":     "${{ secrets.ECS_CLUSTER_PRODUCTION }}",
+            "service":     "${{ secrets.ECS_SERVICE_PRODUCTION }}",
+            "workflow":    "${{ github.workflow }}",
+            "run_id":      "${{ github.run_id }}"
+          }
+          EOF
+          cat audit/*.json
+
+      - name: Upload audit record as artifact (90 day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name:            deploy-audit-${{ github.sha }}
+          path:            audit/
+          retention-days:  90

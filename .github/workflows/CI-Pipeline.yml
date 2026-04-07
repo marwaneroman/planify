@@ -9,8 +9,14 @@ on:
 
 env:
   NODE_VERSION: "20"
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # AWS ECR settings — set AWS_ACCOUNT_ID and AWS_REGION as repo variables,
+  # and AWS_ROLE_ARN as a repo secret.
+  ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+  IMAGE_NAME: ${{ github.event.repository.name }}
+
+permissions:
+  contents: read
+  id-token: write   # required for OIDC → AWS role assumption
 
 jobs:
   # 1. LINT
@@ -54,7 +60,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # 3. SAST — CodeQL static analysis
+  # 3. SAST — Semgrep static analysis
   sast:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
@@ -119,17 +125,12 @@ jobs:
           path: ${{ matrix.workspace }}/coverage/
           retention-days: 7
 
-  # 5. BUILD DOCKER IMAGES
+  # 5. BUILD DOCKER IMAGES (local only — not pushed yet)
   build:
     name: Build Docker Images
     runs-on: ubuntu-latest
     needs: unit-tests
-    permissions:
-      contents: read
-      packages: write
     outputs:
-      backend-tag: ${{ steps.meta-backend.outputs.tags }}
-      frontend-tag: ${{ steps.meta-frontend.outputs.tags }}
       image-version: sha-${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -137,54 +138,39 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
 
       # --- Backend ---
-      - name: Extract metadata (backend)
-        id: meta-backend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend
-          tags: |
-            type=sha,prefix=sha-
-            type=ref,event=branch
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
-
       - name: Build backend image (no push yet)
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           push: false
           load: true  # load into local daemon for scanning
-          tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }}
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:sha-${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       # --- Frontend ---
-      - name: Extract metadata (frontend)
-        id: meta-frontend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend
-          tags: |
-            type=sha,prefix=sha-
-            type=ref,event=branch
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
-
       - name: Build frontend image (no push yet)
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: false
           load: true
-          tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }}
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:sha-${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -194,6 +180,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     permissions:
+      contents: read
+      id-token: write
       security-events: write
     steps:
       - uses: actions/checkout@v4
@@ -347,51 +335,62 @@ jobs:
           path: frontend/playwright-report/
           retention-days: 7
 
-  # 9. PUSH IMAGES (only after all tests pass)
+  # 9. PUSH IMAGES TO AWS ECR
   push-images:
-    name: Push Docker Images
+    name: Push Docker Images to ECR
     runs-on: ubuntu-latest
     needs: [integration-tests, e2e-tests]
     if: github.event_name == 'push'
     permissions:
       contents: read
-      packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Push backend image
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # --- Push backend ---
+      - name: Build and push backend image to ECR
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:sha-${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${{ github.ref_name }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:latest
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:sha-${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${{ github.ref_name }}
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Push frontend image
+      # --- Push frontend ---
+      - name: Build and push frontend image to ECR
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:sha-${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ github.ref_name }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:latest
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:sha-${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ github.ref_name }}
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Output the full image URIs for downstream use (e.g. ECS task definition update)
+      - name: Output pushed image URIs
+        run: |
+          echo "backend=${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:sha-${{ github.sha }}"
+          echo "frontend=${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:sha-${{ github.sha }}"
 
   # SUMMARY
   summary:
@@ -404,7 +403,7 @@ jobs:
         run: |
           echo "Lint:                ${{ needs.lint.result }}"
           echo "Secret scan:         ${{ needs.secret-scan.result }}"
-          echo "SAST (CodeQL):       ${{ needs.sast.result }}"
+          echo "SAST (Semgrep):      ${{ needs.sast.result }}"
           echo "Unit tests:          ${{ needs.unit-tests.result }}"
           echo "Build:               ${{ needs.build.result }}"
           echo "Container scan:      ${{ needs.container-scan.result }}"
