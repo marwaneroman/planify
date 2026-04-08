@@ -16,7 +16,7 @@
 #         • staging    — no protection rules
 #         • production — add Required reviewers
 #    3. Set GitHub secrets (listed below)
-#
+# 
 #  Required GitHub Secrets:
 #    AWS_ACCOUNT_ID          — 12-digit AWS account number
 #    AWS_REGION              — e.g. us-east-1
