@@ -125,7 +125,7 @@ jobs:
           path: ${{ matrix.workspace }}/coverage/
           retention-days: 7
 
-  # 5. BUILD DOCKER IMAGES (local only — not pushed yet)
+  # 5. BUILD DOCKER IMAGES (local)
   build:
     name: Build Docker Images
     runs-on: ubuntu-latest
@@ -143,6 +143,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
 
       - name: Log in to Amazon ECR
         id: ecr-login
