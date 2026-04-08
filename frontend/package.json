@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "backend": "cd backend && npm start",
-    "backend:dev": "cd backend && npm run dev"
+    "backend:dev": "cd backend && npm run dev",
+    "test:unit" : "npm run"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
