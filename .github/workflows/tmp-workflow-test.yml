@@ -1,12 +1,6 @@
 # Lint → Secret Scan → SAST → Unit Tests → Dependency Audit → Build → Container Scan → Integration → E2E → Push → Deploy 
 name: CI/CD
 
-#on:
-  push:
-    branches: [integrate, master]
-  pull_request:
-    branches: [integrate, master]
-
 env:
   NODE_VERSION: "20"
   # AWS ECR settings — set AWS_ACCOUNT_ID and AWS_REGION as repo variables,
