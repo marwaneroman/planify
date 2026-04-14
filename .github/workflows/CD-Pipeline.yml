@@ -65,7 +65,7 @@ jobs:
         run: echo "CI green — starting CD"
 
   # ──────────────────────────────────────────────────────────────
-  # 1. Re-tag & sign the image that CI pushed to ECR
+  # 1. Re-tag & sign the image that CI pushed to ECR 
   #
   #    CI already pushed :latest to ECR.
   #    We now add an immutable SHA tag and sign by digest.
