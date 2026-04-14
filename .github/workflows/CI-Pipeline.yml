@@ -1,4 +1,4 @@
-# Lint → Secret Scan → SAST → Unit Tests → Dependency Audit → Build → Container Scan → Integration → E2E → Push → Deploy
+# Lint → Secret Scan → SAST → Unit Tests → Dependency Audit → Build → Container Scan → Integration → E2E → Push → Deploy 
 name: CI/CD
 
 on:
