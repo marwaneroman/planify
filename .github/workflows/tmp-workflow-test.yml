@@ -52,7 +52,7 @@ jobs:
         with:
           context: ./backend
           push: false
-          load: true  # load into local daemon for scanning
+          load: true  # load into local daemon for scanning 
           tags: |
             ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:sha-${{ github.sha }}
             ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${{ github.ref_name }}
