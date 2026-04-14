@@ -35,9 +35,11 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-
+          #role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::561410231123:role/Github-OIDC
+          aws-region: us-east-1
+          #aws-region: ${{ vars.AWS_REGION }}
+          #audience: sts.amazonaws.com
 
       - name: OIDC Test
         run: aws sts get-caller-identity
