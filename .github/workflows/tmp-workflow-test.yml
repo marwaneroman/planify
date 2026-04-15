@@ -27,6 +27,7 @@ jobs:
     # needs: build
     permissions:
       contents: read
+      actions: read
       id-token: write
       security-events: write
     steps:
@@ -80,6 +81,7 @@ jobs:
           format: sarif
           output: trivy-frontend.sarif
           severity: CRITICAL,HIGH
+          ignore-unfixed: true
           exit-code: 0
 
       - name: Upload frontend scan results
