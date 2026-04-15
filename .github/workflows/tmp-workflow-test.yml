@@ -3,9 +3,9 @@ name: CI/CD
 
 on:
   push:
-    branches: [master]
+    branches: [integrate, master]
   pull_request:
-    branches: [master]
+    branches: [integrate, master]
 
 env:
   NODE_VERSION: "20"
@@ -20,54 +20,70 @@ permissions:
 
 jobs:
 
-# 5. BUILD DOCKER IMAGES (local)
-  build:
-    name: Build Docker Images
+# 6. CONTAINER SCAN (Trivy) — before push
+  container-scan:
+    name: Container Scan (Trivy)
     runs-on: ubuntu-latest
-    outputs:
-      image-version: sha-${{ github.sha }}
+    needs: build
+    permissions:
+      contents: read
+      id-token: write
+      security-events: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-          audience: sts.amazonaws.com
-
-      - name: OIDC Test
-        run: aws sts get-caller-identity
-
-      - name: Log in to Amazon ECR
-        id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      # --- Backend ---
-      - name: Build backend image (no push yet)
+      # Rebuild locally for scanning (images don't persist between jobs)
+      - name: Rebuild backend image for scan
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           push: false
-          load: true  # load into local daemon for scanning
-          tags: |
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:sha-${{ github.sha }}
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${{ github.ref_name }}
+          load: true
+          tags: planify/backend:scan
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
-      # --- Frontend ---
-      - name: Build frontend image (no push yet)
+      - name: Rebuild frontend image for scan
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: false
           load: true
-          tags: |
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:sha-${{ github.sha }}
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ github.ref_name }}
+          tags: planify/frontend:scan
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+
+      # --- Scan backend ---
+      - name: Scan backend image (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: planify/backend:scan
+          format: sarif
+          output: trivy-backend.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: Upload backend scan results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-backend.sarif
+          category: trivy-backend
+
+      # --- Scan frontend ---
+      - name: Scan frontend image (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: planify/frontend:scan
+          format: sarif
+          output: trivy-frontend.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: Upload frontend scan results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-frontend.sarif
+          category: trivy-frontend
