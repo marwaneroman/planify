@@ -46,6 +46,15 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Verify ECR repositories exist
+        run: |
+          aws ecr describe-repositories \
+            --repository-names "${{ env.IMAGE_NAME }}/backend" "${{ env.IMAGE_NAME }}/frontend" \
+            --region ${{ vars.AWS_REGION }}
+
       # --- Push backend ---
       - name: Build and push backend image to ECR
         uses: docker/build-push-action@v5
