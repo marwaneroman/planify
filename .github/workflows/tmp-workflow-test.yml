@@ -45,6 +45,8 @@ jobs:
       - name: Log in to Amazon ECR
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registries: ${{ vars.AWS_ACCOUNT_ID }}
 
       - name: Verify AWS identity
         run: aws sts get-caller-identity
@@ -54,6 +56,8 @@ jobs:
           aws ecr describe-repositories \
             --repository-names "${{ env.IMAGE_NAME }}/backend" "${{ env.IMAGE_NAME }}/frontend" \
             --region ${{ vars.AWS_REGION }}
+      - name: Verify Docker ECR auth
+        run: docker pull ${{ steps.ecr-login.outputs.registry }}/${{ env.IMAGE_NAME }}/backend:latest || true
 
       # --- Push backend ---
       - name: Build and push backend image to ECR
@@ -62,9 +66,9 @@ jobs:
           context: ./backend
           push: true
           tags: |
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:sha-${{ github.sha }}
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${{ github.ref_name }}
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:latest
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.IMAGE_NAME }}/backend:sha-${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.IMAGE_NAME }}/backend:${{ github.ref_name }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.IMAGE_NAME }}/backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -75,9 +79,9 @@ jobs:
           context: ./frontend
           push: true
           tags: |
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:sha-${{ github.sha }}
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ github.ref_name }}
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:latest
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.IMAGE_NAME }}/frontend:sha-${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.IMAGE_NAME }}/frontend:${{ github.ref_name }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.IMAGE_NAME }}/frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
