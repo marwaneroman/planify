@@ -22,12 +22,14 @@
 #    AWS_REGION              — e.g. us-east-1
 #    AWS_ROLE_ARN_STAGING    — IAM role ARN for staging deploys
 #    AWS_ROLE_ARN_PRODUCTION — IAM role ARN for prod deploys
-#    ECR_REPOSITORY          — ECR repo name (e.g. my-app)
+#    ECR_REPOSITORY_BACKEND  — ECR repo name for backend (e.g. planify/backend)
+#    ECR_REPOSITORY_FRONTEND — ECR repo name for frontend (e.g. planify/frontend)
 #    ECS_CLUSTER_STAGING     — ECS cluster name for staging
 #    ECS_CLUSTER_PRODUCTION  — ECS cluster name for production
-#    ECS_SERVICE_STAGING     — ECS service name for staging
-#    ECS_SERVICE_PRODUCTION  — ECS service name for production
-#    ECS_CONTAINER_NAME      — Container name in task definition
+#    ECS_SERVICE_STAGING     — ECS service name (one service; task has backend + frontend containers)
+#    ECS_SERVICE_PRODUCTION  — ECS service name (production)
+#    ECS_CONTAINER_NAME_BACKEND  — Backend container name in the task definition
+#    ECS_CONTAINER_NAME_FRONTEND — Frontend container name in the task definition
 #    CW_ALARM_STAGING        — CloudWatch alarm name for staging
 #    CW_ALARM_PRODUCTION     — CloudWatch alarm name for production
 #    SLACK_WEBHOOK_URL       — Slack incoming webhook
@@ -48,7 +50,6 @@ permissions:
 env:
   AWS_REGION:        ${{ secrets.AWS_REGION }}
   AWS_ACCOUNT_ID:    ${{ secrets.AWS_ACCOUNT_ID }}
-  ECR_REPOSITORY:    ${{ secrets.ECR_REPOSITORY }}
   ECR_REGISTRY:      ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
   IMAGE_TAG:         ${{ github.sha }}
 
@@ -65,14 +66,14 @@ jobs:
         run: echo "CI green — starting CD"
 
   # ──────────────────────────────────────────────────────────────
-  # 1. Re-tag & sign the image that CI pushed to ECR 
+  # 1. Re-tag & sign the images that CI pushed to ECR
   #
-  #    CI already pushed :latest to ECR.
-  #    We now add an immutable SHA tag and sign by digest.
+  #    CI already pushed :latest to each ECR repository (backend + frontend).
+  #    We add an immutable SHA tag and sign each image by digest.
   #    No secrets in the pipeline — auth is via OIDC.
   # ──────────────────────────────────────────────────────────────
   sign-image:
-    name: Tag & sign image (keyless OIDC)
+    name: Tag & sign images (keyless OIDC)
     runs-on: ubuntu-latest
     needs: guard
 
@@ -81,8 +82,10 @@ jobs:
       contents: read
 
     outputs:
-      image-uri:    ${{ steps.tag.outputs.image-uri }}
-      image-digest: ${{ steps.tag.outputs.image-digest }}
+      backend-image-uri:    ${{ steps.tag-backend.outputs.image-uri }}
+      backend-image-digest: ${{ steps.tag-backend.outputs.image-digest }}
+      frontend-image-uri:    ${{ steps.tag-frontend.outputs.image-uri }}
+      frontend-image-digest: ${{ steps.tag-frontend.outputs.image-digest }}
 
     steps:
       - name: Configure AWS credentials (OIDC)
@@ -95,13 +98,12 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Pull the :latest image CI pushed, add an immutable SHA tag,
-      # and push both tags. We always deploy by SHA — never :latest.
-      - name: Add immutable SHA tag
-        id: tag
+      # Pull :latest from each repo CI pushed, add immutable SHA tags, push.
+      - name: Add immutable SHA tag (backend)
+        id: tag-backend
         run: |
-          LATEST="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest"
-          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+          LATEST="${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BACKEND }}:latest"
+          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }}"
 
           docker pull "$LATEST"
           docker tag  "$LATEST" "$SHA_TAG"
@@ -112,23 +114,41 @@ jobs:
 
           echo "image-uri=$SHA_TAG"       >> "$GITHUB_OUTPUT"
           echo "image-digest=$DIGEST"     >> "$GITHUB_OUTPUT"
-          echo "Image: $SHA_TAG ($DIGEST)"
+          echo "Backend image: $SHA_TAG ($DIGEST)"
+
+      - name: Add immutable SHA tag (frontend)
+        id: tag-frontend
+        run: |
+          LATEST="${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_FRONTEND }}:latest"
+          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_FRONTEND }}:${{ env.IMAGE_TAG }}"
+
+          docker pull "$LATEST"
+          docker tag  "$LATEST" "$SHA_TAG"
+          docker push "$SHA_TAG"
+
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$SHA_TAG" \
+            | cut -d'@' -f2)
+
+          echo "image-uri=$SHA_TAG"       >> "$GITHUB_OUTPUT"
+          echo "image-digest=$DIGEST"     >> "$GITHUB_OUTPUT"
+          echo "Frontend image: $SHA_TAG ($DIGEST)"
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
 
-      # Sign by digest, not by tag — tags are mutable.
-      # The signature is stored as a .sig tag in the same ECR repo.
-      # For private ECR repos Cosign uses the existing Docker login.
-      - name: Sign image (keyless)
+      # Sign by digest — signatures are stored in the same ECR repo as .sig tags.
+      - name: Sign images (keyless)
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
           cosign sign --yes \
-            "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}@${{ steps.tag.outputs.image-digest }}"
+            "${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BACKEND }}@${{ steps.tag-backend.outputs.image-digest }}"
+          cosign sign --yes \
+            "${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_FRONTEND }}@${{ steps.tag-frontend.outputs.image-digest }}"
 
   # ──────────────────────────────────────────────────────────────
   # 2. Deploy to staging (ECS rolling update)
+  #    One ECS service whose task definition defines both containers.
   # ──────────────────────────────────────────────────────────────
   deploy-staging:
     name: Deploy → staging (ECS)
@@ -156,8 +176,7 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
 
-      # Verify signature before deploying — unsigned images are rejected
-      - name: Verify image signature
+      - name: Verify image signatures
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
@@ -166,36 +185,52 @@ jobs:
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}@${{ needs.sign-image.outputs.image-digest }}"
+            "${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BACKEND }}@${{ needs.sign-image.outputs.backend-image-digest }}"
+          cosign verify \
+            --certificate-identity-regexp \
+              "https://github.com/${{ github.repository }}/.github/workflows/" \
+            --certificate-oidc-issuer \
+              "https://token.actions.githubusercontent.com" \
+            "${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_FRONTEND }}@${{ needs.sign-image.outputs.frontend-image-digest }}"
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Download current task definition, swap the image, register new revision
-      - name: Download current task definition
+      - name: Download current staging task definition
         run: |
+          TASK_ARN=$(aws ecs describe-services \
+            --cluster "${{ secrets.ECS_CLUSTER_STAGING }}" \
+            --services "${{ secrets.ECS_SERVICE_STAGING }}" \
+            --query 'services[0].taskDefinition' \
+            --output text)
           aws ecs describe-task-definition \
-            --task-definition ${{ secrets.ECS_SERVICE_STAGING }} \
+            --task-definition "$TASK_ARN" \
             --query taskDefinition \
             > task-def-staging.json
 
-      - name: Render new task definition with updated image
-        id: task-def
+      - name: Render task definition (backend image)
+        id: task-def-backend
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition:  task-def-staging.json
-          container-name:   ${{ secrets.ECS_CONTAINER_NAME }}
-          image:            ${{ needs.sign-image.outputs.image-uri }}
+          container-name:   ${{ secrets.ECS_CONTAINER_NAME_BACKEND }}
+          image:            ${{ needs.sign-image.outputs.backend-image-uri }}
 
-      - name: Deploy to ECS staging (rolling update)
+      - name: Render task definition (frontend image)
+        id: task-def-frontend
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition:  ${{ steps.task-def-backend.outputs.task-definition }}
+          container-name:   ${{ secrets.ECS_CONTAINER_NAME_FRONTEND }}
+          image:            ${{ needs.sign-image.outputs.frontend-image-uri }}
+
+      - name: Deploy to ECS staging
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          task-definition:         ${{ steps.task-def.outputs.task-definition }}
+          task-definition:         ${{ steps.task-def-frontend.outputs.task-definition }}
           service:                 ${{ secrets.ECS_SERVICE_STAGING }}
           cluster:                 ${{ secrets.ECS_CLUSTER_STAGING }}
           wait-for-service-stability: true
-          # If the new tasks don't stabilise, ECS rolls back automatically
-          # (deployment circuit breaker must be enabled on the ECS service)
 
   # ──────────────────────────────────────────────────────────────
   # 3a. Smoke tests (run in parallel with DAST)
@@ -299,7 +334,7 @@ jobs:
   deploy-production:
     name: Deploy → production (ECS canary 10%→100%)
     runs-on: ubuntu-latest
-    needs: approval-gate
+    needs: [approval-gate, sign-image]
 
     permissions:
       id-token: write
@@ -321,8 +356,7 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
 
-      # Defence in depth — verify again before touching production
-      - name: Verify image signature (pre-prod)
+      - name: Verify image signatures (pre-prod)
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
@@ -331,12 +365,17 @@ jobs:
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}@${{ needs.sign-image.outputs.image-digest }}"
+            "${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BACKEND }}@${{ needs.sign-image.outputs.backend-image-digest }}"
+          cosign verify \
+            --certificate-identity-regexp \
+              "https://github.com/${{ github.repository }}/.github/workflows/" \
+            --certificate-oidc-issuer \
+              "https://token.actions.githubusercontent.com" \
+            "${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_FRONTEND }}@${{ needs.sign-image.outputs.frontend-image-digest }}"
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Store current task def ARN so rollback job can use it if needed
       - name: Record current task definition (for rollback)
         id: get-current
         run: |
@@ -350,33 +389,39 @@ jobs:
 
       - name: Download current production task definition
         run: |
+          TASK_ARN=$(aws ecs describe-services \
+            --cluster "${{ secrets.ECS_CLUSTER_PRODUCTION }}" \
+            --services "${{ secrets.ECS_SERVICE_PRODUCTION }}" \
+            --query 'services[0].taskDefinition' \
+            --output text)
           aws ecs describe-task-definition \
-            --task-definition "${{ secrets.ECS_SERVICE_PRODUCTION }}" \
+            --task-definition "$TASK_ARN" \
             --query taskDefinition \
             > task-def-prod.json
 
-      - name: Render new task definition (production image)
-        id: task-def
+      - name: Render task definition (production backend image)
+        id: task-def-backend
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition:  task-def-prod.json
-          container-name:   ${{ secrets.ECS_CONTAINER_NAME }}
-          image:            ${{ needs.sign-image.outputs.image-uri }}
+          container-name:   ${{ secrets.ECS_CONTAINER_NAME_BACKEND }}
+          image:            ${{ needs.sign-image.outputs.backend-image-uri }}
 
-      # ECS native canary: 10% traffic to new revision.
-      # The service must have canary deployment configured
-      # (see bootstrap-aws.sh). ECS handles the traffic split
-      # via the ALB and monitors the CW alarm automatically.
-      - name: Deploy to ECS production (native canary)
+      - name: Render task definition (production frontend image)
+        id: task-def-frontend
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition:  ${{ steps.task-def-backend.outputs.task-definition }}
+          container-name:   ${{ secrets.ECS_CONTAINER_NAME_FRONTEND }}
+          image:            ${{ needs.sign-image.outputs.frontend-image-uri }}
+
+      - name: Deploy to ECS production
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          task-definition:            ${{ steps.task-def.outputs.task-definition }}
+          task-definition:            ${{ steps.task-def-frontend.outputs.task-definition }}
           service:                    ${{ secrets.ECS_SERVICE_PRODUCTION }}
           cluster:                    ${{ secrets.ECS_CLUSTER_PRODUCTION }}
           wait-for-service-stability: true
-          # ECS circuit breaker + canary alarm handle rollback automatically.
-          # wait-for-service-stability=true means this step fails if ECS
-          # rolls back, which will surface the failure in the workflow.
 
   # ──────────────────────────────────────────────────────────────
   # 6. Observe — poll CloudWatch alarms for 5 minutes post-deploy
@@ -455,7 +500,6 @@ jobs:
             --task-definition "$PREVIOUS" \
             --force-new-deployment
 
-          # Wait for rollback to stabilise
           aws ecs wait services-stable \
             --cluster "${{ secrets.ECS_CLUSTER_PRODUCTION }}" \
             --services "${{ secrets.ECS_SERVICE_PRODUCTION }}"
@@ -510,7 +554,8 @@ jobs:
                   {"title":"Commit",     "value":"`${{ github.sha }}`",       "short":true},
                   {"title":"Actor",      "value":"${{ github.actor }}",        "short":true},
                   {"title":"Region",     "value":"${{ env.AWS_REGION }}",      "short":true},
-                  {"title":"Image",      "value":"`${{ needs.sign-image.outputs.image-uri }}`", "short":false},
+                  {"title":"Backend image",  "value":"`${{ needs.sign-image.outputs.backend-image-uri }}`", "short":false},
+                  {"title":"Frontend image", "value":"`${{ needs.sign-image.outputs.frontend-image-uri }}`", "short":false},
                   {"title":"Run",        "value":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short":false}
                 ]
               }]
@@ -521,17 +566,19 @@ jobs:
           mkdir -p audit
           cat > audit/deploy-$(date +%Y%m%d-%H%M%S).json << EOF
           {
-            "timestamp":   "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "commit":      "${{ github.sha }}",
-            "actor":       "${{ github.actor }}",
-            "image_uri":   "${{ needs.sign-image.outputs.image-uri }}",
-            "digest":      "${{ needs.sign-image.outputs.image-digest }}",
-            "environment": "production",
-            "aws_region":  "${{ env.AWS_REGION }}",
-            "cluster":     "${{ secrets.ECS_CLUSTER_PRODUCTION }}",
-            "service":     "${{ secrets.ECS_SERVICE_PRODUCTION }}",
-            "workflow":    "${{ github.workflow }}",
-            "run_id":      "${{ github.run_id }}"
+            "timestamp":    "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit":       "${{ github.sha }}",
+            "actor":        "${{ github.actor }}",
+            "backend_image_uri":    "${{ needs.sign-image.outputs.backend-image-uri }}",
+            "backend_digest":       "${{ needs.sign-image.outputs.backend-image-digest }}",
+            "frontend_image_uri":   "${{ needs.sign-image.outputs.frontend-image-uri }}",
+            "frontend_digest":      "${{ needs.sign-image.outputs.frontend-image-digest }}",
+            "environment":  "production",
+            "aws_region":   "${{ env.AWS_REGION }}",
+            "cluster":      "${{ secrets.ECS_CLUSTER_PRODUCTION }}",
+            "service":      "${{ secrets.ECS_SERVICE_PRODUCTION }}",
+            "workflow":     "${{ github.workflow }}",
+            "run_id":       "${{ github.run_id }}"
           }
           EOF
           cat audit/*.json
