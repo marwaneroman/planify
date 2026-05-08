@@ -40,10 +40,19 @@
 
 name: CD Pipeline (AWS)
 
+# Original code
+
+# on:
+#  workflow_run:
+#    workflows: ["CI/CD"]
+#    types: [completed]
+#    branches: [integrate, master]
+
+# Just for testing (should be deleted after)
 on:
-  workflow_run:
-    workflows: ["CI/CD"]
-    types: [completed]
+  push:
+    branches: [integrate, master]
+  pull_request:
     branches: [integrate, master]
 
 permissions:
