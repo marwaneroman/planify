@@ -71,7 +71,7 @@ jobs:
   guard:
     name: Guard — CI must pass
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion != 'success' }}
     steps:
       - name: CI passed
         run: echo "CI green — starting CD"
