@@ -114,8 +114,10 @@ jobs:
       - name: Add immutable SHA tag (backend)
         id: tag-backend
         run: |
-          LATEST="${{ secrets.ECR_REPOSITORY_BACKEND }}/${{ secrets.ECR_REPOSITORY_BACKEND }}:latest"
-          SHA_TAG="${{ secrets.ECR_REPOSITORY_BACKEND }}/${{ secrets.ECR_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }}"
+          LATEST_ORIGINAL="${{ secrets.ECR_REPOSITORY_BACKEND }}/${{ secrets.ECR_REPOSITORY_BACKEND }}:latest"
+          LATEST="561410231123.dkr.ecr.us-east-1.amazonaws.com/planify/backend:integrate"
+          SHA_TAG_ORIGINAL="${{ secrets.ECR_REPOSITORY_BACKEND }}/${{ secrets.ECR_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }}"
+          SHA_TAG="561410231123.dkr.ecr.us-east-1.amazonaws.com/planify/backend:integrate:${{ env.IMAGE_TAG }}"
 
           docker pull "$LATEST"
           docker tag  "$LATEST" "$SHA_TAG"
