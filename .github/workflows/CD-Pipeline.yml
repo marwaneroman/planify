@@ -153,8 +153,8 @@ jobs:
           echo "image-digest=$DIGEST"  >> "$GITHUB_OUTPUT"
           echo "cosign-ref=$REPO_DIGEST" >> "$GITHUB_OUTPUT"
 
-          mkdir -p .cd-refs
-          printf '%s' "$REPO_DIGEST" > .cd-refs/backend.txt
+          mkdir -p cd-refs
+          printf '%s' "$REPO_DIGEST" > cd-refs/backend.txt
           echo "Backend image: $SHA_TAG ($DIGEST)"
 
       - name: Add immutable SHA tag (frontend)
@@ -179,21 +179,21 @@ jobs:
           echo "image-digest=$DIGEST"  >> "$GITHUB_OUTPUT"
           echo "cosign-ref=$REPO_DIGEST" >> "$GITHUB_OUTPUT"
 
-          mkdir -p .cd-refs
-          printf '%s' "$REPO_DIGEST" > .cd-refs/frontend.txt
+          mkdir -p cd-refs
+          printf '%s' "$REPO_DIGEST" > cd-refs/frontend.txt
           echo "Frontend image: $SHA_TAG ($DIGEST)"
 
       - name: Persisted cosign refs (debug + guard)
         run: |
           set -euo pipefail
-          test -s .cd-refs/backend.txt
-          test -s .cd-refs/frontend.txt
+          test -s cd-refs/backend.txt
+          test -s cd-refs/frontend.txt
           echo "::group::cosign refs (artifact source — not job outputs)"
-          wc -c .cd-refs/backend.txt .cd-refs/frontend.txt
-          grep -q '@sha256:' .cd-refs/backend.txt
-          grep -q '@sha256:' .cd-refs/frontend.txt
-          echo "backend (prefix): $(head -c 60 .cd-refs/backend.txt)..."
-          echo "frontend (prefix): $(head -c 60 .cd-refs/frontend.txt)..."
+          wc -c cd-refs/backend.txt cd-refs/frontend.txt
+          grep -q '@sha256:' cd-refs/backend.txt
+          grep -q '@sha256:' cd-refs/frontend.txt
+          echo "backend (prefix): $(head -c 60 cd-refs/backend.txt)..."
+          echo "frontend (prefix): $(head -c 60 cd-refs/frontend.txt)..."
           echo "::endgroup::"
 
       - name: Install Cosign
@@ -204,14 +204,15 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          cosign sign --yes "$(tr -d '\n\r' < .cd-refs/backend.txt)"
-          cosign sign --yes "$(tr -d '\n\r' < .cd-refs/frontend.txt)"
+          cosign sign --yes "$(tr -d '\n\r' < cd-refs/backend.txt)"
+          cosign sign --yes "$(tr -d '\n\r' < cd-refs/frontend.txt)"
 
+      # Directory must not be dot-prefixed: upload-artifact@v4 excludes hidden paths by default.
       - name: Upload cosign refs for deploy jobs (bypass flaky job.outputs)
         uses: actions/upload-artifact@v4
         with:
           name: cosign-image-refs
-          path: .cd-refs/
+          path: cd-refs/
           if-no-files-found: error
           retention-days: 3
 
@@ -239,7 +240,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: cosign-image-refs
-          path: .cd-refs
+          path: cd-refs
 
       - name: Configure AWS credentials (OIDC — staging role)
         uses: aws-actions/configure-aws-credentials@v4
@@ -267,10 +268,10 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Refs from artifact (source of truth for verify)"
-          ls -la .cd-refs
-          wc -c .cd-refs/backend.txt .cd-refs/frontend.txt
+          ls -la cd-refs
+          wc -c cd-refs/backend.txt cd-refs/frontend.txt
           for img in backend frontend; do
-            f=".cd-refs/$img.txt"
+            f="cd-refs/$img.txt"
             if ! grep -q '@sha256:' "$f"; then
               echo "::error::$f missing registry/repo@sha256:… form — first chars: $(head -c 120 "$f"; echo)"
               exit 1
@@ -279,8 +280,8 @@ jobs:
           done
           echo "::endgroup::"
 
-          BK="$(tr -d '\n\r' < .cd-refs/backend.txt)"
-          FE="$(tr -d '\n\r' < .cd-refs/frontend.txt)"
+          BK="$(tr -d '\n\r' < cd-refs/backend.txt)"
+          FE="$(tr -d '\n\r' < cd-refs/frontend.txt)"
           echo "Parsed backend ref length: ${#BK} frontend length: ${#FE}"
           if [[ -z "$BK" || -z "$FE" ]]; then
             echo "::error::Artifact refs empty (download/sign step failed?). See sign-image job artifact upload step."
@@ -455,7 +456,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: cosign-image-refs
-          path: .cd-refs
+          path: cd-refs
 
       - name: Configure AWS credentials (OIDC — production role)
         uses: aws-actions/configure-aws-credentials@v4
@@ -483,10 +484,10 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Refs from artifact (source of truth for verify)"
-          ls -la .cd-refs
-          wc -c .cd-refs/backend.txt .cd-refs/frontend.txt
+          ls -la cd-refs
+          wc -c cd-refs/backend.txt cd-refs/frontend.txt
           for img in backend frontend; do
-            f=".cd-refs/$img.txt"
+            f="cd-refs/$img.txt"
             if ! grep -q '@sha256:' "$f"; then
               echo "::error::$f missing registry/repo@sha256:… form — first chars: $(head -c 120 "$f"; echo)"
               exit 1
@@ -495,8 +496,8 @@ jobs:
           done
           echo "::endgroup::"
 
-          BK="$(tr -d '\n\r' < .cd-refs/backend.txt)"
-          FE="$(tr -d '\n\r' < .cd-refs/frontend.txt)"
+          BK="$(tr -d '\n\r' < cd-refs/backend.txt)"
+          FE="$(tr -d '\n\r' < cd-refs/frontend.txt)"
           echo "Parsed backend ref length: ${#BK} frontend length: ${#FE}"
           if [[ -z "$BK" || -z "$FE" ]]; then
             echo "::error::Artifact refs empty (download/sign step failed?). See sign-image job artifact upload step."
