@@ -114,8 +114,8 @@ jobs:
       - name: Add immutable SHA tag (backend)
         id: tag-backend
         run: |
-          LATEST="${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BACKEND }}:latest"
-          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }}"
+          LATEST="${{ secrets.ECR_REGISTRY_BACKEND }}/${{ secrets.ECR_REPOSITORY_BACKEND }}:latest"
+          SHA_TAG="${{ secrets.ECR_REGISTRY_BACKEND }}/${{ secrets.ECR_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }}"
 
           docker pull "$LATEST"
           docker tag  "$LATEST" "$SHA_TAG"
@@ -131,8 +131,8 @@ jobs:
       - name: Add immutable SHA tag (frontend)
         id: tag-frontend
         run: |
-          LATEST="${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_FRONTEND }}:latest"
-          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_FRONTEND }}:${{ env.IMAGE_TAG }}"
+          LATEST="${{ secrets.ECR_REGISTRY_FRONTEND }}/${{ secrets.ECR_REPOSITORY_FRONTEND }}:latest"
+          SHA_TAG="${{ secrets.ECR_REGISTRY_FRONTEND }}/${{ secrets.ECR_REPOSITORY_FRONTEND }}:${{ env.IMAGE_TAG }}"
 
           docker pull "$LATEST"
           docker tag  "$LATEST" "$SHA_TAG"
