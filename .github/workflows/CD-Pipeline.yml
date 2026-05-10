@@ -229,13 +229,13 @@ jobs:
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ needs.sign-image.outputs.backend-cosign-ref }}"
+            "${{ needs['sign-image'].outputs['backend-cosign-ref'] }}"
           cosign verify \
             --certificate-identity-regexp \
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ needs.sign-image.outputs.frontend-cosign-ref }}"
+            "${{ needs['sign-image'].outputs['frontend-cosign-ref'] }}"
 
       - name: Download current staging task definition
         run: |
@@ -255,7 +255,7 @@ jobs:
         with:
           task-definition:  task-def-staging.json
           container-name:   ${{ secrets.ECS_CONTAINER_NAME_BACKEND }}
-          image:            ${{ needs.sign-image.outputs.backend-image-uri }}
+          image:            ${{ needs['sign-image'].outputs['backend-image-uri'] }}
 
       - name: Render task definition (frontend image)
         id: task-def-frontend
@@ -263,7 +263,7 @@ jobs:
         with:
           task-definition:  ${{ steps.task-def-backend.outputs.task-definition }}
           container-name:   ${{ secrets.ECS_CONTAINER_NAME_FRONTEND }}
-          image:            ${{ needs.sign-image.outputs.frontend-image-uri }}
+          image:            ${{ needs['sign-image'].outputs['frontend-image-uri'] }}
 
       - name: Deploy to ECS staging
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
@@ -408,13 +408,13 @@ jobs:
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ needs.sign-image.outputs.backend-cosign-ref }}"
+            "${{ needs['sign-image'].outputs['backend-cosign-ref'] }}"
           cosign verify \
             --certificate-identity-regexp \
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ needs.sign-image.outputs.frontend-cosign-ref }}"
+            "${{ needs['sign-image'].outputs['frontend-cosign-ref'] }}"
 
       - name: Record current task definition (for rollback)
         id: get-current
@@ -445,7 +445,7 @@ jobs:
         with:
           task-definition:  task-def-prod.json
           container-name:   ${{ secrets.ECS_CONTAINER_NAME_BACKEND }}
-          image:            ${{ needs.sign-image.outputs.backend-image-uri }}
+          image:            ${{ needs['sign-image'].outputs['backend-image-uri'] }}
 
       - name: Render task definition (production frontend image)
         id: task-def-frontend
@@ -453,7 +453,7 @@ jobs:
         with:
           task-definition:  ${{ steps.task-def-backend.outputs.task-definition }}
           container-name:   ${{ secrets.ECS_CONTAINER_NAME_FRONTEND }}
-          image:            ${{ needs.sign-image.outputs.frontend-image-uri }}
+          image:            ${{ needs['sign-image'].outputs['frontend-image-uri'] }}
 
       - name: Deploy to ECS production
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
@@ -516,7 +516,7 @@ jobs:
     name: Auto rollback
     runs-on: ubuntu-latest
     needs: [deploy-production, observe]
-    if: ${{ failure() && needs.deploy-production.result == 'success' }}
+    if: ${{ failure() && needs['deploy-production'].result == 'success' }}
 
     permissions:
       id-token: write
@@ -531,7 +531,7 @@ jobs:
 
       - name: Roll back to previous task definition
         run: |
-          PREVIOUS="${{ needs.deploy-production.outputs.previous-task-def }}"
+          PREVIOUS="${{ needs['deploy-production'].outputs['previous-task-def'] }}"
           echo "Rolling back to: $PREVIOUS"
 
           aws ecs update-service \
@@ -594,8 +594,8 @@ jobs:
                   {"title":"Commit",     "value":"`${{ github.sha }}`",       "short":true},
                   {"title":"Actor",      "value":"${{ github.actor }}",        "short":true},
                   {"title":"Region",     "value":"${{ env.AWS_REGION }}",      "short":true},
-                  {"title":"Backend image",  "value":"`${{ needs.sign-image.outputs.backend-image-uri }}`", "short":false},
-                  {"title":"Frontend image", "value":"`${{ needs.sign-image.outputs.frontend-image-uri }}`", "short":false},
+                  {"title":"Backend image",  "value":"`${{ needs['sign-image'].outputs['backend-image-uri'] }}`", "short":false},
+                  {"title":"Frontend image", "value":"`${{ needs['sign-image'].outputs['frontend-image-uri'] }}`", "short":false},
                   {"title":"Run",        "value":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short":false}
                 ]
               }]
@@ -609,10 +609,10 @@ jobs:
             "timestamp":    "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "commit":       "${{ github.sha }}",
             "actor":        "${{ github.actor }}",
-            "backend_image_uri":    "${{ needs.sign-image.outputs.backend-image-uri }}",
-            "backend_digest":       "${{ needs.sign-image.outputs.backend-image-digest }}",
-            "frontend_image_uri":   "${{ needs.sign-image.outputs.frontend-image-uri }}",
-            "frontend_digest":      "${{ needs.sign-image.outputs.frontend-image-digest }}",
+            "backend_image_uri":    "${{ needs['sign-image'].outputs['backend-image-uri'] }}",
+            "backend_digest":       "${{ needs['sign-image'].outputs['backend-image-digest'] }}",
+            "frontend_image_uri":   "${{ needs['sign-image'].outputs['frontend-image-uri'] }}",
+            "frontend_digest":      "${{ needs['sign-image'].outputs['frontend-image-digest'] }}",
             "environment":  "production",
             "aws_region":   "${{ env.AWS_REGION }}",
             "cluster":      "${{ secrets.ECS_CLUSTER_PRODUCTION }}",
