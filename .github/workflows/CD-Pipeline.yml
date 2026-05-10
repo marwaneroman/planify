@@ -95,8 +95,10 @@ jobs:
       ecr-repo-frontend:     ${{ steps.ecr-repos.outputs.frontend }}
       backend-image-uri:     ${{ steps.tag-backend.outputs.image-uri }}
       backend-image-digest:  ${{ steps.tag-backend.outputs.image-digest }}
+      backend-cosign-ref:    ${{ steps.tag-backend.outputs.cosign-ref }}
       frontend-image-uri:    ${{ steps.tag-frontend.outputs.image-uri }}
       frontend-image-digest: ${{ steps.tag-frontend.outputs.image-digest }}
+      frontend-cosign-ref:   ${{ steps.tag-frontend.outputs.cosign-ref }}
 
     steps:
       - name: Resolve ECR repository name (ARN or plain name)
@@ -107,6 +109,8 @@ jobs:
         run: |
           backend="$BACKEND_SECRET"
           frontend="$FRONTEND_SECRET"
+          backend=$(echo -n "$backend" | tr -d '\r\n')
+          frontend=$(echo -n "$frontend" | tr -d '\r\n')
           if [[ "$backend" == arn:aws:ecr:*:repository/* ]]; then
             backend="${backend#*:repository/}"
           fi
@@ -137,11 +141,17 @@ jobs:
           docker tag  "$LATEST" "$SHA_TAG"
           docker push "$SHA_TAG"
 
-          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$SHA_TAG" \
-            | cut -d'@' -f2)
+          REPO_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$SHA_TAG")
+          REPO_DIGEST=$(echo -n "$REPO_DIGEST" | tr -d '\r\n')
+          if [[ -z "$REPO_DIGEST" || "$REPO_DIGEST" != *@* ]]; then
+            echo "Could not read RepoDigests for $SHA_TAG (got '$REPO_DIGEST')"
+            exit 1
+          fi
+          DIGEST="${REPO_DIGEST#*@}"
 
-          echo "image-uri=$SHA_TAG"       >> "$GITHUB_OUTPUT"
-          echo "image-digest=$DIGEST"     >> "$GITHUB_OUTPUT"
+          echo "image-uri=$SHA_TAG"    >> "$GITHUB_OUTPUT"
+          echo "image-digest=$DIGEST"  >> "$GITHUB_OUTPUT"
+          echo "cosign-ref=$REPO_DIGEST" >> "$GITHUB_OUTPUT"
           echo "Backend image: $SHA_TAG ($DIGEST)"
 
       - name: Add immutable SHA tag (frontend)
@@ -154,11 +164,17 @@ jobs:
           docker tag  "$LATEST" "$SHA_TAG"
           docker push "$SHA_TAG"
 
-          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$SHA_TAG" \
-            | cut -d'@' -f2)
+          REPO_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$SHA_TAG")
+          REPO_DIGEST=$(echo -n "$REPO_DIGEST" | tr -d '\r\n')
+          if [[ -z "$REPO_DIGEST" || "$REPO_DIGEST" != *@* ]]; then
+            echo "Could not read RepoDigests for $SHA_TAG (got '$REPO_DIGEST')"
+            exit 1
+          fi
+          DIGEST="${REPO_DIGEST#*@}"
 
-          echo "image-uri=$SHA_TAG"       >> "$GITHUB_OUTPUT"
-          echo "image-digest=$DIGEST"     >> "$GITHUB_OUTPUT"
+          echo "image-uri=$SHA_TAG"    >> "$GITHUB_OUTPUT"
+          echo "image-digest=$DIGEST"  >> "$GITHUB_OUTPUT"
+          echo "cosign-ref=$REPO_DIGEST" >> "$GITHUB_OUTPUT"
           echo "Frontend image: $SHA_TAG ($DIGEST)"
 
       - name: Install Cosign
@@ -169,10 +185,8 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          cosign sign --yes \
-            "${{ env.ECR_REGISTRY }}/${{ steps.ecr-repos.outputs.backend }}@${{ steps.tag-backend.outputs.image-digest }}"
-          cosign sign --yes \
-            "${{ env.ECR_REGISTRY }}/${{ steps.ecr-repos.outputs.frontend }}@${{ steps.tag-frontend.outputs.image-digest }}"
+          cosign sign --yes "${{ steps.tag-backend.outputs.cosign-ref }}"
+          cosign sign --yes "${{ steps.tag-frontend.outputs.cosign-ref }}"
 
   # ──────────────────────────────────────────────────────────────
   # 2. Deploy to staging (ECS rolling update)
@@ -200,6 +214,9 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
           aws-region:     ${{ env.AWS_REGION }}
 
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
 
@@ -212,16 +229,13 @@ jobs:
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ env.ECR_REGISTRY }}/${{ needs.sign-image.outputs.ecr-repo-backend }}@${{ needs.sign-image.outputs.backend-image-digest }}"
+            "${{ needs.sign-image.outputs.backend-cosign-ref }}"
           cosign verify \
             --certificate-identity-regexp \
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ env.ECR_REGISTRY }}/${{ needs.sign-image.outputs.ecr-repo-frontend }}@${{ needs.sign-image.outputs.frontend-image-digest }}"
-
-      - name: Log in to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+            "${{ needs.sign-image.outputs.frontend-cosign-ref }}"
 
       - name: Download current staging task definition
         run: |
@@ -379,6 +393,9 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
           aws-region:     ${{ env.AWS_REGION }}
 
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
 
@@ -391,16 +408,13 @@ jobs:
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ env.ECR_REGISTRY }}/${{ needs.sign-image.outputs.ecr-repo-backend }}@${{ needs.sign-image.outputs.backend-image-digest }}"
+            "${{ needs.sign-image.outputs.backend-cosign-ref }}"
           cosign verify \
             --certificate-identity-regexp \
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ env.ECR_REGISTRY }}/${{ needs.sign-image.outputs.ecr-repo-frontend }}@${{ needs.sign-image.outputs.frontend-image-digest }}"
-
-      - name: Log in to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+            "${{ needs.sign-image.outputs.frontend-cosign-ref }}"
 
       - name: Record current task definition (for rollback)
         id: get-current
