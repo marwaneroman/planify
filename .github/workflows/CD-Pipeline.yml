@@ -1,5 +1,5 @@
 # ================================================================
-#  CD Pipeline — AWS (ECR + ECS Fargate).
+#  CD Pipeline — AWS (ECR + ECS Fargate). 
 # ================================================================
 #
 #  Architecture:
@@ -58,8 +58,8 @@ permissions:
 
 env:
   AWS_REGION:        ${{ secrets.AWS_REGION }}
-  AWS_ACCOUNT_ID:    ${{ secrets.AWS_ACCOUNT_ID }}
-  ECR_REGISTRY:      ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  AWS_ACCOUNT_ID:    ${{ vars.AWS_ACCOUNT_ID }}
+  ECR_REGISTRY:      ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
   IMAGE_TAG:         ${{ github.sha }}
 
 # ──────────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ jobs:
   guard:
     name: Guard — CI must pass
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion != 'success' }}
     steps:
       - name: CI passed
         run: echo "CI green — starting CD"
