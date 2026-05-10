@@ -189,7 +189,7 @@ jobs:
           cosign sign --yes "${{ steps['tag-frontend'].outputs['cosign-ref'] }}"
 
   # ──────────────────────────────────────────────────────────────
-  # 2. Deploy to staging (ECS rolling update)
+  # 2. Deploy to staging (ECS rolling update) 
   #    One ECS service whose task definition defines both containers.
   # ──────────────────────────────────────────────────────────────
   deploy-staging:
