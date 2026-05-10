@@ -91,14 +91,14 @@ jobs:
       contents: read
 
     outputs:
-      ecr-repo-backend:      ${{ steps.ecr-repos.outputs.backend }}
-      ecr-repo-frontend:     ${{ steps.ecr-repos.outputs.frontend }}
-      backend-image-uri:     ${{ steps.tag-backend.outputs.image-uri }}
-      backend-image-digest:  ${{ steps.tag-backend.outputs.image-digest }}
-      backend-cosign-ref:    ${{ steps.tag-backend.outputs.cosign-ref }}
-      frontend-image-uri:    ${{ steps.tag-frontend.outputs.image-uri }}
-      frontend-image-digest: ${{ steps.tag-frontend.outputs.image-digest }}
-      frontend-cosign-ref:   ${{ steps.tag-frontend.outputs.cosign-ref }}
+      ecr-repo-backend:      ${{ steps['ecr-repos'].outputs.backend }}
+      ecr-repo-frontend:     ${{ steps['ecr-repos'].outputs.frontend }}
+      backend-image-uri:     ${{ steps['tag-backend'].outputs['image-uri'] }}
+      backend-image-digest:  ${{ steps['tag-backend'].outputs['image-digest'] }}
+      backend-cosign-ref:    ${{ steps['tag-backend'].outputs['cosign-ref'] }}
+      frontend-image-uri:    ${{ steps['tag-frontend'].outputs['image-uri'] }}
+      frontend-image-digest: ${{ steps['tag-frontend'].outputs['image-digest'] }}
+      frontend-cosign-ref:   ${{ steps['tag-frontend'].outputs['cosign-ref'] }}
 
     steps:
       - name: Resolve ECR repository name (ARN or plain name)
@@ -134,8 +134,8 @@ jobs:
       - name: Add immutable SHA tag (backend)
         id: tag-backend
         run: |
-          LATEST="${{ env.ECR_REGISTRY }}/${{ steps.ecr-repos.outputs.backend }}:latest"
-          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ steps.ecr-repos.outputs.backend }}:${{ env.IMAGE_TAG }}"
+          LATEST="${{ env.ECR_REGISTRY }}/${{ steps['ecr-repos'].outputs.backend }}:latest"
+          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ steps['ecr-repos'].outputs.backend }}:${{ env.IMAGE_TAG }}"
 
           docker pull "$LATEST"
           docker tag  "$LATEST" "$SHA_TAG"
@@ -157,8 +157,8 @@ jobs:
       - name: Add immutable SHA tag (frontend)
         id: tag-frontend
         run: |
-          LATEST="${{ env.ECR_REGISTRY }}/${{ steps.ecr-repos.outputs.frontend }}:latest"
-          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ steps.ecr-repos.outputs.frontend }}:${{ env.IMAGE_TAG }}"
+          LATEST="${{ env.ECR_REGISTRY }}/${{ steps['ecr-repos'].outputs.frontend }}:latest"
+          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ steps['ecr-repos'].outputs.frontend }}:${{ env.IMAGE_TAG }}"
 
           docker pull "$LATEST"
           docker tag  "$LATEST" "$SHA_TAG"
@@ -185,8 +185,8 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          cosign sign --yes "${{ steps.tag-backend.outputs.cosign-ref }}"
-          cosign sign --yes "${{ steps.tag-frontend.outputs.cosign-ref }}"
+          cosign sign --yes "${{ steps['tag-backend'].outputs['cosign-ref'] }}"
+          cosign sign --yes "${{ steps['tag-frontend'].outputs['cosign-ref'] }}"
 
   # ──────────────────────────────────────────────────────────────
   # 2. Deploy to staging (ECS rolling update)
@@ -261,14 +261,14 @@ jobs:
         id: task-def-frontend
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition:  ${{ steps.task-def-backend.outputs.task-definition }}
+          task-definition:  ${{ steps['task-def-backend'].outputs['task-definition'] }}
           container-name:   ${{ secrets.ECS_CONTAINER_NAME_FRONTEND }}
           image:            ${{ needs['sign-image'].outputs['frontend-image-uri'] }}
 
       - name: Deploy to ECS staging
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          task-definition:         ${{ steps.task-def-frontend.outputs.task-definition }}
+          task-definition:         ${{ steps['task-def-frontend'].outputs['task-definition'] }}
           service:                 ${{ secrets.ECS_SERVICE_STAGING }}
           cluster:                 ${{ secrets.ECS_CLUSTER_STAGING }}
           wait-for-service-stability: true
@@ -381,7 +381,7 @@ jobs:
       contents: read
 
     outputs:
-      previous-task-def: ${{ steps.get-current.outputs.previous-task-def }}
+      previous-task-def: ${{ steps['get-current'].outputs['previous-task-def'] }}
 
     steps:
       - name: Checkout
@@ -451,14 +451,14 @@ jobs:
         id: task-def-frontend
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition:  ${{ steps.task-def-backend.outputs.task-definition }}
+          task-definition:  ${{ steps['task-def-backend'].outputs['task-definition'] }}
           container-name:   ${{ secrets.ECS_CONTAINER_NAME_FRONTEND }}
           image:            ${{ needs['sign-image'].outputs['frontend-image-uri'] }}
 
       - name: Deploy to ECS production
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          task-definition:            ${{ steps.task-def-frontend.outputs.task-definition }}
+          task-definition:            ${{ steps['task-def-frontend'].outputs['task-definition'] }}
           service:                    ${{ secrets.ECS_SERVICE_PRODUCTION }}
           cluster:                    ${{ secrets.ECS_CLUSTER_PRODUCTION }}
           wait-for-service-stability: true
@@ -477,7 +477,7 @@ jobs:
       contents: read
 
     outputs:
-      alarm-state: ${{ steps.check-alarm.outputs.alarm-state }}
+      alarm-state: ${{ steps['check-alarm'].outputs['alarm-state'] }}
 
     steps:
       - name: Configure AWS credentials (OIDC)
