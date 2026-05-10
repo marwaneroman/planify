@@ -152,6 +152,9 @@ jobs:
           echo "image-uri=$SHA_TAG"    >> "$GITHUB_OUTPUT"
           echo "image-digest=$DIGEST"  >> "$GITHUB_OUTPUT"
           echo "cosign-ref=$REPO_DIGEST" >> "$GITHUB_OUTPUT"
+
+          mkdir -p .cd-refs
+          printf '%s' "$REPO_DIGEST" > .cd-refs/backend.txt
           echo "Backend image: $SHA_TAG ($DIGEST)"
 
       - name: Add immutable SHA tag (frontend)
@@ -175,7 +178,23 @@ jobs:
           echo "image-uri=$SHA_TAG"    >> "$GITHUB_OUTPUT"
           echo "image-digest=$DIGEST"  >> "$GITHUB_OUTPUT"
           echo "cosign-ref=$REPO_DIGEST" >> "$GITHUB_OUTPUT"
+
+          mkdir -p .cd-refs
+          printf '%s' "$REPO_DIGEST" > .cd-refs/frontend.txt
           echo "Frontend image: $SHA_TAG ($DIGEST)"
+
+      - name: Persisted cosign refs (debug + guard)
+        run: |
+          set -euo pipefail
+          test -s .cd-refs/backend.txt
+          test -s .cd-refs/frontend.txt
+          echo "::group::cosign refs (artifact source — not job outputs)"
+          wc -c .cd-refs/backend.txt .cd-refs/frontend.txt
+          grep -q '@sha256:' .cd-refs/backend.txt
+          grep -q '@sha256:' .cd-refs/frontend.txt
+          echo "backend (prefix): $(head -c 60 .cd-refs/backend.txt)..."
+          echo "frontend (prefix): $(head -c 60 .cd-refs/frontend.txt)..."
+          echo "::endgroup::"
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
@@ -185,8 +204,16 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          cosign sign --yes "${{ steps['tag-backend'].outputs['cosign-ref'] }}"
-          cosign sign --yes "${{ steps['tag-frontend'].outputs['cosign-ref'] }}"
+          cosign sign --yes "$(tr -d '\n\r' < .cd-refs/backend.txt)"
+          cosign sign --yes "$(tr -d '\n\r' < .cd-refs/frontend.txt)"
+
+      - name: Upload cosign refs for deploy jobs (bypass flaky job.outputs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosign-image-refs
+          path: .cd-refs/
+          if-no-files-found: error
+          retention-days: 3
 
   # ──────────────────────────────────────────────────────────────
   # 2. Deploy to staging (ECS rolling update) 
@@ -208,6 +235,12 @@ jobs:
       - name: Checkout (for task definition file)
         uses: actions/checkout@v4
 
+      - name: Download cosign image refs (immutable digest form)
+        uses: actions/download-artifact@v4
+        with:
+          name: cosign-image-refs
+          path: .cd-refs
+
       - name: Configure AWS credentials (OIDC — staging role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -223,19 +256,50 @@ jobs:
       - name: Verify image signatures
         env:
           COSIGN_EXPERIMENTAL: "1"
+          BK_JOB_REF: ${{ needs['sign-image'].outputs['backend-cosign-ref'] }}
+          FE_JOB_REF: ${{ needs['sign-image'].outputs['frontend-cosign-ref'] }}
         run: |
+          set -euo pipefail
+
+          echo "::group::Locate issue: job.outputs (often empty due to hyphen parsing)"
+          echo "backend-cosign-ref from needs length: ${#BK_JOB_REF}"
+          echo "frontend-cosign-ref from needs length: ${#FE_JOB_REF}"
+          echo "::endgroup::"
+
+          echo "::group::Refs from artifact (source of truth for verify)"
+          ls -la .cd-refs
+          wc -c .cd-refs/backend.txt .cd-refs/frontend.txt
+          for img in backend frontend; do
+            f=".cd-refs/$img.txt"
+            if ! grep -q '@sha256:' "$f"; then
+              echo "::error::$f missing registry/repo@sha256:… form — first chars: $(head -c 120 "$f"; echo)"
+              exit 1
+            fi
+            echo "$img artifact byte count: $(wc -c < "$f" | tr -d ' ')"
+          done
+          echo "::endgroup::"
+
+          BK="$(tr -d '\n\r' < .cd-refs/backend.txt)"
+          FE="$(tr -d '\n\r' < .cd-refs/frontend.txt)"
+          echo "Parsed backend ref length: ${#BK} frontend length: ${#FE}"
+          if [[ -z "$BK" || -z "$FE" ]]; then
+            echo "::error::Artifact refs empty (download/sign step failed?). See sign-image job artifact upload step."
+            exit 1
+          fi
+
           cosign verify \
             --certificate-identity-regexp \
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ needs['sign-image'].outputs['backend-cosign-ref'] }}"
+            "$BK"
+
           cosign verify \
             --certificate-identity-regexp \
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ needs['sign-image'].outputs['frontend-cosign-ref'] }}"
+            "$FE"
 
       - name: Download current staging task definition
         run: |
@@ -387,6 +451,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Download cosign image refs (immutable digest form)
+        uses: actions/download-artifact@v4
+        with:
+          name: cosign-image-refs
+          path: .cd-refs
+
       - name: Configure AWS credentials (OIDC — production role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -402,19 +472,50 @@ jobs:
       - name: Verify image signatures (pre-prod)
         env:
           COSIGN_EXPERIMENTAL: "1"
+          BK_JOB_REF: ${{ needs['sign-image'].outputs['backend-cosign-ref'] }}
+          FE_JOB_REF: ${{ needs['sign-image'].outputs['frontend-cosign-ref'] }}
         run: |
+          set -euo pipefail
+
+          echo "::group::Locate issue: job.outputs (often empty due to hyphen parsing)"
+          echo "backend-cosign-ref from needs length: ${#BK_JOB_REF}"
+          echo "frontend-cosign-ref from needs length: ${#FE_JOB_REF}"
+          echo "::endgroup::"
+
+          echo "::group::Refs from artifact (source of truth for verify)"
+          ls -la .cd-refs
+          wc -c .cd-refs/backend.txt .cd-refs/frontend.txt
+          for img in backend frontend; do
+            f=".cd-refs/$img.txt"
+            if ! grep -q '@sha256:' "$f"; then
+              echo "::error::$f missing registry/repo@sha256:… form — first chars: $(head -c 120 "$f"; echo)"
+              exit 1
+            fi
+            echo "$img artifact byte count: $(wc -c < "$f" | tr -d ' ')"
+          done
+          echo "::endgroup::"
+
+          BK="$(tr -d '\n\r' < .cd-refs/backend.txt)"
+          FE="$(tr -d '\n\r' < .cd-refs/frontend.txt)"
+          echo "Parsed backend ref length: ${#BK} frontend length: ${#FE}"
+          if [[ -z "$BK" || -z "$FE" ]]; then
+            echo "::error::Artifact refs empty (download/sign step failed?). See sign-image job artifact upload step."
+            exit 1
+          fi
+
           cosign verify \
             --certificate-identity-regexp \
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ needs['sign-image'].outputs['backend-cosign-ref'] }}"
+            "$BK"
+
           cosign verify \
             --certificate-identity-regexp \
               "https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer \
               "https://token.actions.githubusercontent.com" \
-            "${{ needs['sign-image'].outputs['frontend-cosign-ref'] }}"
+            "$FE"
 
       - name: Record current task definition (for rollback)
         id: get-current
