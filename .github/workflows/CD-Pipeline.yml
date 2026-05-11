@@ -317,11 +317,11 @@ jobs:
 
       - name: Confirm ECS container names are configured (vars || secrets)
         env:
-          BACKEND_CTR: ${{ vars.ECS_CONTAINER_NAME_BACKEND || secrets.ECS_CONTAINER_NAME_BACKEND }}
-          FRONTEND_CTR: ${{ vars.ECS_CONTAINER_NAME_FRONTEND || secrets.ECS_CONTAINER_NAME_FRONTEND }}
+          BACKEND_CTR: ${{ vars.ECS_CONTAINER_NAME || secrets.ECS_CONTAINER_NAME }}
+          FRONTEND_CTR: ${{ vars.ECS_CONTAINER_NAME || secrets.ECS_CONTAINER_NAME }}
         run: |
           if [[ -z "${BACKEND_CTR// /}" ]] || [[ -z "${FRONTEND_CTR// /}" ]]; then
-            echo "::error::ECS_CONTAINER_NAME_BACKEND / ECS_CONTAINER_NAME_FRONTEND are empty." \
+            echo "::error::ECS_CONTAINER_NAME / ECS_CONTAINER_NAME are empty." \
               "Define them as Actions Variables **or** Secrets (Settings → Secrets and variables)."
             exit 1
           fi
