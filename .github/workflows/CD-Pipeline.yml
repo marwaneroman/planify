@@ -30,8 +30,9 @@
 #    ECS_CLUSTER_PRODUCTION  — ECS cluster name for production
 #    ECS_SERVICE_STAGING     — ECS service name (one service; task has backend + frontend containers)
 #    ECS_SERVICE_PRODUCTION  — ECS service name (production)
-#    ECS_CONTAINER_NAME_BACKEND  — Backend container name in the task definition
-#    ECS_CONTAINER_NAME_FRONTEND — Frontend container name in the task definition
+#    ECS_CONTAINER_NAME_BACKEND  — ECS containerDefinitions[].name (backend container)
+#    ECS_CONTAINER_NAME_FRONTEND — ECS containerDefinitions[].name (frontend container)
+#       Use repo/org Variables OR Secrets — same keys; Vars are preferred (names are non-secret).
 #    CW_ALARM_STAGING        — CloudWatch alarm name for staging
 #    CW_ALARM_PRODUCTION     — CloudWatch alarm name for production
 #    SLACK_WEBHOOK_URL       — Slack incoming webhook
@@ -314,12 +315,23 @@ jobs:
             --query taskDefinition \
             > task-def-staging.json
 
+      - name: Confirm ECS container names are configured (vars || secrets)
+        env:
+          BACKEND_CTR: ${{ vars.ECS_CONTAINER_NAME_BACKEND || secrets.ECS_CONTAINER_NAME_BACKEND }}
+          FRONTEND_CTR: ${{ vars.ECS_CONTAINER_NAME_FRONTEND || secrets.ECS_CONTAINER_NAME_FRONTEND }}
+        run: |
+          if [[ -z "${BACKEND_CTR// /}" ]] || [[ -z "${FRONTEND_CTR// /}" ]]; then
+            echo "::error::ECS_CONTAINER_NAME_BACKEND / ECS_CONTAINER_NAME_FRONTEND are empty." \
+              "Define them as Actions Variables **or** Secrets (Settings → Secrets and variables)."
+            exit 1
+          fi
+
       - name: Render task definition (backend image)
         id: task-def-backend
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition:  task-def-staging.json
-          container-name:   ${{ secrets.ECS_CONTAINER_NAME_BACKEND }}
+          container-name:   ${{ vars.ECS_CONTAINER_NAME_BACKEND || secrets.ECS_CONTAINER_NAME_BACKEND }}
           image:            ${{ needs['sign-image'].outputs['backend-image-uri'] }}
 
       - name: Render task definition (frontend image)
@@ -327,7 +339,7 @@ jobs:
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition:  ${{ steps['task-def-backend'].outputs['task-definition'] }}
-          container-name:   ${{ secrets.ECS_CONTAINER_NAME_FRONTEND }}
+          container-name:   ${{ vars.ECS_CONTAINER_NAME_FRONTEND || secrets.ECS_CONTAINER_NAME_FRONTEND }}
           image:            ${{ needs['sign-image'].outputs['frontend-image-uri'] }}
 
       - name: Deploy to ECS staging
@@ -541,12 +553,23 @@ jobs:
             --query taskDefinition \
             > task-def-prod.json
 
+      - name: Confirm ECS container names are configured (vars || secrets)
+        env:
+          BACKEND_CTR: ${{ vars.ECS_CONTAINER_NAME_BACKEND || secrets.ECS_CONTAINER_NAME_BACKEND }}
+          FRONTEND_CTR: ${{ vars.ECS_CONTAINER_NAME_FRONTEND || secrets.ECS_CONTAINER_NAME_FRONTEND }}
+        run: |
+          if [[ -z "${BACKEND_CTR// /}" ]] || [[ -z "${FRONTEND_CTR// /}" ]]; then
+            echo "::error::ECS_CONTAINER_NAME_BACKEND / ECS_CONTAINER_NAME_FRONTEND are empty." \
+              "Define them as Actions Variables **or** Secrets (Settings → Secrets and variables)."
+            exit 1
+          fi
+
       - name: Render task definition (production backend image)
         id: task-def-backend
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition:  task-def-prod.json
-          container-name:   ${{ secrets.ECS_CONTAINER_NAME_BACKEND }}
+          container-name:   ${{ vars.ECS_CONTAINER_NAME_BACKEND || secrets.ECS_CONTAINER_NAME_BACKEND }}
           image:            ${{ needs['sign-image'].outputs['backend-image-uri'] }}
 
       - name: Render task definition (production frontend image)
@@ -554,7 +577,7 @@ jobs:
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition:  ${{ steps['task-def-backend'].outputs['task-definition'] }}
-          container-name:   ${{ secrets.ECS_CONTAINER_NAME_FRONTEND }}
+          container-name:   ${{ vars.ECS_CONTAINER_NAME_FRONTEND || secrets.ECS_CONTAINER_NAME_FRONTEND }}
           image:            ${{ needs['sign-image'].outputs['frontend-image-uri'] }}
 
       - name: Deploy to ECS production
