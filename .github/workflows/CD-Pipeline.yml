@@ -92,15 +92,17 @@ jobs:
       id-token: write   # needed for OIDC → AWS + Cosign
       contents: read
 
+    # Job outputs: use underscore keys only. Hyphenated step output names (e.g. image-uri)
+    # are unreliable when mapped through job.outputs / needs.*.outputs (parsed like subtraction).
     outputs:
-      ecr-repo-backend:      ${{ steps['ecr-repos'].outputs.backend }}
-      ecr-repo-frontend:     ${{ steps['ecr-repos'].outputs.frontend }}
-      backend-image-uri:     ${{ steps['tag-backend'].outputs['image-uri'] }}
-      backend-image-digest:  ${{ steps['tag-backend'].outputs['image-digest'] }}
-      backend-cosign-ref:    ${{ steps['tag-backend'].outputs['cosign-ref'] }}
-      frontend-image-uri:    ${{ steps['tag-frontend'].outputs['image-uri'] }}
-      frontend-image-digest: ${{ steps['tag-frontend'].outputs['image-digest'] }}
-      frontend-cosign-ref:   ${{ steps['tag-frontend'].outputs['cosign-ref'] }}
+      ecr_repo_backend:       ${{ steps['ecr-repos'].outputs.backend }}
+      ecr_repo_frontend:      ${{ steps['ecr-repos'].outputs.frontend }}
+      backend_image_uri:      ${{ steps['tag-backend'].outputs.image_uri }}
+      backend_image_digest:   ${{ steps['tag-backend'].outputs.image_digest }}
+      backend_cosign_ref:     ${{ steps['tag-backend'].outputs.cosign_ref }}
+      frontend_image_uri:     ${{ steps['tag-frontend'].outputs.image_uri }}
+      frontend_image_digest:  ${{ steps['tag-frontend'].outputs.image_digest }}
+      frontend_cosign_ref:    ${{ steps['tag-frontend'].outputs.cosign_ref }}
 
     steps:
       - name: Resolve ECR repository name (ARN or plain name)
@@ -151,9 +153,9 @@ jobs:
           fi
           DIGEST="${REPO_DIGEST#*@}"
 
-          echo "image-uri=$SHA_TAG"    >> "$GITHUB_OUTPUT"
-          echo "image-digest=$DIGEST"  >> "$GITHUB_OUTPUT"
-          echo "cosign-ref=$REPO_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "image_uri=$SHA_TAG"      >> "$GITHUB_OUTPUT"
+          echo "image_digest=$DIGEST"    >> "$GITHUB_OUTPUT"
+          echo "cosign_ref=$REPO_DIGEST" >> "$GITHUB_OUTPUT"
 
           mkdir -p cd-refs
           printf '%s' "$REPO_DIGEST" > cd-refs/backend.txt
@@ -177,9 +179,9 @@ jobs:
           fi
           DIGEST="${REPO_DIGEST#*@}"
 
-          echo "image-uri=$SHA_TAG"    >> "$GITHUB_OUTPUT"
-          echo "image-digest=$DIGEST"  >> "$GITHUB_OUTPUT"
-          echo "cosign-ref=$REPO_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "image_uri=$SHA_TAG"      >> "$GITHUB_OUTPUT"
+          echo "image_digest=$DIGEST"    >> "$GITHUB_OUTPUT"
+          echo "cosign_ref=$REPO_DIGEST" >> "$GITHUB_OUTPUT"
 
           mkdir -p cd-refs
           printf '%s' "$REPO_DIGEST" > cd-refs/frontend.txt
@@ -210,7 +212,7 @@ jobs:
           cosign sign --yes "$(tr -d '\n\r' < cd-refs/frontend.txt)"
 
       # Directory must not be dot-prefixed: upload-artifact@v4 excludes hidden paths by default.
-      - name: Upload cosign refs for deploy jobs (bypass flaky job.outputs)
+      - name: Upload cosign refs for deploy jobs (immutable digest; ECS uses these refs)
         uses: actions/upload-artifact@v4
         with:
           name: cosign-image-refs
@@ -259,8 +261,8 @@ jobs:
       - name: Verify image signatures
         env:
           COSIGN_EXPERIMENTAL: "1"
-          BK_JOB_REF: ${{ needs['sign-image'].outputs['backend-cosign-ref'] }}
-          FE_JOB_REF: ${{ needs['sign-image'].outputs['frontend-cosign-ref'] }}
+          BK_JOB_REF: ${{ needs['sign-image'].outputs.backend_cosign_ref }}
+          FE_JOB_REF: ${{ needs['sign-image'].outputs.frontend_cosign_ref }}
         run: |
           set -euo pipefail
 
@@ -304,6 +306,21 @@ jobs:
               "https://token.actions.githubusercontent.com" \
             "$FE"
 
+      - name: Set ECS image refs from signed artifact (digest pin; avoids flaky job.outputs)
+        id: ecs_images
+        run: |
+          set -euo pipefail
+          for img in backend frontend; do
+            f="cd-refs/$img.txt"
+            test -s "$f" || { echo "::error::$f missing or empty"; exit 1; }
+            grep -q '@sha256:' "$f" || { echo "::error::$f must be registry/repo@sha256:…"; exit 1; }
+          done
+          BK=$(tr -d '\n\r' < cd-refs/backend.txt)
+          FE=$(tr -d '\n\r' < cd-refs/frontend.txt)
+          echo "backend_image=$BK" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=$FE" >> "$GITHUB_OUTPUT"
+          echo "ECS will use digest-pinned images (lengths): backend=${#BK} frontend=${#FE}"
+
       - name: Download current staging task definition
         run: |
           TASK_ARN=$(aws ecs describe-services \
@@ -327,30 +344,13 @@ jobs:
             exit 1
           fi
 
-      - name: Confirm image URIs are available from sign-image
-        env:
-          BACKEND_IMAGE_URI:  ${{ needs['sign-image'].outputs['backend-image-uri'] }}
-          FRONTEND_IMAGE_URI: ${{ needs['sign-image'].outputs['frontend-image-uri'] }}
-          BACKEND_REPO:       ${{ needs['sign-image'].outputs['ecr-repo-backend'] }}
-          FRONTEND_REPO:      ${{ needs['sign-image'].outputs['ecr-repo-frontend'] }}
-        run: |
-          set -euo pipefail
-          echo "backend-image-uri:  '${BACKEND_IMAGE_URI}'"
-          echo "frontend-image-uri: '${FRONTEND_IMAGE_URI}'"
-          echo "ecr-repo-backend:   '${BACKEND_REPO}'"
-          echo "ecr-repo-frontend:  '${FRONTEND_REPO}'"
-          if [[ -z "${BACKEND_IMAGE_URI// /}" || -z "${FRONTEND_IMAGE_URI// /}" ]]; then
-            echo "::error::Missing image URI outputs from the 'sign-image' job. This would break ECS render."
-            exit 1
-          fi
-
       - name: Render task definition (backend image)
         id: task-def-backend
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition:  task-def-staging.json
           container-name:   ${{ vars.ECS_CONTAINER_NAME_BACKEND || secrets.ECS_CONTAINER_NAME_BACKEND }}
-          image:            ${{ needs['sign-image'].outputs['backend-image-uri'] || format('{0}/{1}:{2}', env.ECR_REGISTRY, needs['sign-image'].outputs['ecr-repo-backend'], env.IMAGE_TAG) }}
+          image:            ${{ steps.ecs_images.outputs.backend_image }}
 
       - name: Render task definition (frontend image)
         id: task-def-frontend
@@ -358,7 +358,7 @@ jobs:
         with:
           task-definition:  ${{ steps['task-def-backend'].outputs['task-definition'] }}
           container-name:   ${{ vars.ECS_CONTAINER_NAME_FRONTEND || secrets.ECS_CONTAINER_NAME_FRONTEND }}
-          image:            ${{ needs['sign-image'].outputs['frontend-image-uri'] || format('{0}/{1}:{2}', env.ECR_REGISTRY, needs['sign-image'].outputs['ecr-repo-frontend'], env.IMAGE_TAG) }}
+          image:            ${{ steps.ecs_images.outputs.frontend_image }}
 
       - name: Deploy to ECS staging
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
@@ -503,8 +503,8 @@ jobs:
       - name: Verify image signatures (pre-prod)
         env:
           COSIGN_EXPERIMENTAL: "1"
-          BK_JOB_REF: ${{ needs['sign-image'].outputs['backend-cosign-ref'] }}
-          FE_JOB_REF: ${{ needs['sign-image'].outputs['frontend-cosign-ref'] }}
+          BK_JOB_REF: ${{ needs['sign-image'].outputs.backend_cosign_ref }}
+          FE_JOB_REF: ${{ needs['sign-image'].outputs.frontend_cosign_ref }}
         run: |
           set -euo pipefail
 
@@ -548,6 +548,21 @@ jobs:
               "https://token.actions.githubusercontent.com" \
             "$FE"
 
+      - name: Set ECS image refs from signed artifact (digest pin; avoids flaky job.outputs)
+        id: ecs_images
+        run: |
+          set -euo pipefail
+          for img in backend frontend; do
+            f="cd-refs/$img.txt"
+            test -s "$f" || { echo "::error::$f missing or empty"; exit 1; }
+            grep -q '@sha256:' "$f" || { echo "::error::$f must be registry/repo@sha256:…"; exit 1; }
+          done
+          BK=$(tr -d '\n\r' < cd-refs/backend.txt)
+          FE=$(tr -d '\n\r' < cd-refs/frontend.txt)
+          echo "backend_image=$BK" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=$FE" >> "$GITHUB_OUTPUT"
+          echo "ECS will use digest-pinned images (lengths): backend=${#BK} frontend=${#FE}"
+
       - name: Record current task definition (for rollback)
         id: get-current
         run: |
@@ -588,7 +603,7 @@ jobs:
         with:
           task-definition:  task-def-prod.json
           container-name:   ${{ vars.ECS_CONTAINER_NAME_BACKEND || secrets.ECS_CONTAINER_NAME_BACKEND }}
-          image:            ${{ needs['sign-image'].outputs['backend-image-uri'] }}
+          image:            ${{ steps.ecs_images.outputs.backend_image }}
 
       - name: Render task definition (production frontend image)
         id: task-def-frontend
@@ -596,7 +611,7 @@ jobs:
         with:
           task-definition:  ${{ steps['task-def-backend'].outputs['task-definition'] }}
           container-name:   ${{ vars.ECS_CONTAINER_NAME_FRONTEND || secrets.ECS_CONTAINER_NAME_FRONTEND }}
-          image:            ${{ needs['sign-image'].outputs['frontend-image-uri'] }}
+          image:            ${{ steps.ecs_images.outputs.frontend_image }}
 
       - name: Deploy to ECS production
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
@@ -737,8 +752,8 @@ jobs:
                   {"title":"Commit",     "value":"`${{ github.sha }}`",       "short":true},
                   {"title":"Actor",      "value":"${{ github.actor }}",        "short":true},
                   {"title":"Region",     "value":"${{ env.AWS_REGION }}",      "short":true},
-                  {"title":"Backend image",  "value":"`${{ needs['sign-image'].outputs['backend-image-uri'] }}`", "short":false},
-                  {"title":"Frontend image", "value":"`${{ needs['sign-image'].outputs['frontend-image-uri'] }}`", "short":false},
+                  {"title":"Backend image",  "value":"`${{ needs['sign-image'].outputs.backend_image_uri }}`", "short":false},
+                  {"title":"Frontend image", "value":"`${{ needs['sign-image'].outputs.frontend_image_uri }}`", "short":false},
                   {"title":"Run",        "value":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short":false}
                 ]
               }]
@@ -752,10 +767,10 @@ jobs:
             "timestamp":    "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "commit":       "${{ github.sha }}",
             "actor":        "${{ github.actor }}",
-            "backend_image_uri":    "${{ needs['sign-image'].outputs['backend-image-uri'] }}",
-            "backend_digest":       "${{ needs['sign-image'].outputs['backend-image-digest'] }}",
-            "frontend_image_uri":   "${{ needs['sign-image'].outputs['frontend-image-uri'] }}",
-            "frontend_digest":      "${{ needs['sign-image'].outputs['frontend-image-digest'] }}",
+            "backend_image_uri":    "${{ needs['sign-image'].outputs.backend_image_uri }}",
+            "backend_digest":       "${{ needs['sign-image'].outputs.backend_image_digest }}",
+            "frontend_image_uri":   "${{ needs['sign-image'].outputs.frontend_image_uri }}",
+            "frontend_digest":      "${{ needs['sign-image'].outputs.frontend_image_digest }}",
             "environment":  "production",
             "aws_region":   "${{ env.AWS_REGION }}",
             "cluster":      "${{ secrets.ECS_CLUSTER_PRODUCTION }}",
