@@ -13,20 +13,27 @@ COPY . .
 ENV NODE_ENV=production
 RUN npm run build
 
-# Stage 2 — Serve 
+# Stage 2 — Serve
 FROM nginx:1.27-alpine AS runner
+
+# Non-privileged port + real passwd entry (ECS rejects missing users like the old `USER non-root`).
+RUN addgroup -g 1001 -S appgroup \
+    && adduser -D -H -u 1001 -G appgroup -s /sbin/nologin appuser \
+    && mkdir -p /var/cache/nginx/client_temp /var/cache/nginx/proxy_temp /var/run/nginx \
+    && chown -R appuser:appgroup /var/cache/nginx /var/run/nginx /usr/share/nginx/html
 
 # Use configs from nginx/ folder:
 RUN rm -rf /etc/nginx/conf.d/*
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder --chown=nginx:nginx /app/dist /usr/share/nginx/html
+COPY --from=builder /app/dist /usr/share/nginx/html
+RUN chown -R appuser:appgroup /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 8080
 
-USER non-root
+USER appuser
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
-    CMD wget -qO- http://127.0.0.1/ || exit 1
+    CMD wget -qO- http://127.0.0.1:8080/ || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

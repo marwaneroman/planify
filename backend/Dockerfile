@@ -34,7 +34,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && addgroup --system --gid 1001 appgroup \
-    && adduser --system --uid 1001 --ingroup appgroup appuser
+    && adduser --disabled-password --gecos '' --uid 1001 --ingroup appgroup appuser
 
 # Copy production deps and Prisma client from deps stage
 COPY --from=deps /app/node_modules ./node_modules
