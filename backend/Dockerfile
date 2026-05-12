@@ -59,4 +59,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
     CMD curl -fsS http://127.0.0.1:3000/health || exit 1
 
-CMD ["sh", "-c", "npx prisma db push && node server.js"]
+# DATABASE_URL must point at Postgres (local: compose `db` service; AWS: RDS endpoint in task env/secrets).
+# Optional: SKIP_PRISMA_DB_PUSH=1 in ECS after schema exists — avoids every task running `db push` at startup (use migrations or a one-off job for schema changes).
+CMD ["sh", "-c", "if [ \"${SKIP_PRISMA_DB_PUSH:-0}\" != \"1\" ]; then npx prisma db push; fi && exec node server.js"]

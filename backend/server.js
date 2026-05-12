@@ -7,6 +7,15 @@ import apiRoutes from "./routes/api.js";
 const PORT = process.env.PORT || 3001;
 const app = express();
 
+// Liveness / readiness — registered before CORS and routes so load balancers &
+// Docker HEALTHCHECK always get 200 without Origin/CORS edge cases.
+app.get("/health", (_req, res) => {
+  res.status(200).type("application/json").json({ ok: true });
+});
+app.get("/readiness", (_req, res) => {
+  res.status(200).type("application/json").json({ ready: true });
+});
+
 // Allow localhost / 127.0.0.1 (any port) and any origins from CORS_ORIGIN
 const corsOrigin = process.env.CORS_ORIGIN || "http://localhost:8080";
 const allowedOrigins = corsOrigin.split(",").map((o) => o.trim()).filter(Boolean);
@@ -34,12 +43,10 @@ app.use(express.json());
 app.use("/auth", authRoutes);
 app.use("/api", apiRoutes);
 
-app.get("/health", (req, res) => res.json({ ok: true }));
-
 // Export app for testing (supertest); only listen when run directly
 export { app };
 if (process.env.NODE_ENV !== "test") {
-  app.listen(PORT, () => {
-    console.log(`Backend running at http://localhost:${PORT}`);
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Backend listening on http://0.0.0.0:${PORT}`);
   });
 }

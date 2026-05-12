@@ -47,6 +47,13 @@ describe("API routes", () => {
     });
   });
 
+  describe("GET /readiness", () => {
+    it("returns 200 and ready: true", async () => {
+      const res = await request(app).get("/readiness").expect(200);
+      assert.strictEqual(res.body.ready, true);
+    });
+  });
+
   describe("Organizations", () => {
     it("GET /api/organizations returns 401 without auth", async () => {
       await request(app).get("/api/organizations").expect(401);
