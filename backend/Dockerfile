@@ -28,6 +28,7 @@ FROM node:20-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=8000
 
 # Runtime deps: OpenSSL for Prisma
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -54,10 +55,10 @@ RUN npm prune --omit=dev \
 
 USER appuser
 
-EXPOSE 3000
+EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
-    CMD curl -fsS http://127.0.0.1:3000/health || exit 1
+    CMD curl -fsS http://127.0.0.1:8000/health || exit 1
 
 # DATABASE_URL must point at Postgres (local: compose `db` service; AWS: RDS endpoint in task env/secrets).
 # Optional: SKIP_PRISMA_DB_PUSH=1 in ECS after schema exists — avoids every task running `db push` at startup (use migrations or a one-off job for schema changes).
