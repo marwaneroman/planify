@@ -4,6 +4,11 @@ import { authMiddleware, requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
+/** Public health for ALB/CD smoke checks (no auth). */
+router.get("/v1/status", (_req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
 router.use(authMiddleware);
 
 // Organizations

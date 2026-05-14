@@ -1,0 +1,313 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Planify staging - optional ECR repos (planify/backend, planify/frontend), ECS Fargate task
+  (backend + frontend sidecar), public ALB on HTTP :80. Set CreateEcrRepositories=false if
+  repos already exist. Set DATABASE_URL secret to your RDS/Aurora connection string before
+  tasks will become healthy.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC that contains the public subnets (often your default VPC).
+
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: >
+      Two subnets in this VPC, each in a different Availability Zone (required for an
+      internet-facing ALB). Prefer subnets with a route to an Internet Gateway (public).
+
+  ClusterName:
+    Type: String
+    Default: planify-staging
+    Description: ECS cluster name (matches GitHub secret ECS_CLUSTER_STAGING if you use this value).
+
+  ServiceName:
+    Type: String
+    Default: planify-staging-web
+    Description: ECS service name (matches GitHub secret ECS_SERVICE_STAGING).
+
+  CreateEcrRepositories:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >
+      Set to "false" if repositories planify/backend and planify/frontend already exist
+      (e.g. created by CI). Otherwise CloudFormation fails with RepositoryAlreadyExistsException.
+
+Conditions:
+  CreateEcrRepos: !Equals [!Ref CreateEcrRepositories, "true"]
+
+Resources:
+  BackendRepository:
+    Type: AWS::ECR::Repository
+    Condition: CreateEcrRepos
+    Properties:
+      RepositoryName: planify/backend
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  FrontendRepository:
+    Type: AWS::ECR::Repository
+    Condition: CreateEcrRepos
+    Properties:
+      RepositoryName: planify/frontend
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  BackendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/planify/staging/backend
+      RetentionInDays: 14
+
+  FrontendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/planify/staging/frontend
+      RetentionInDays: 14
+
+  DatabaseUrlSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: planify/staging/database-url
+      Description: Full Prisma DATABASE_URL string (postgresql://...)
+      SecretString: >-
+        postgresql://CHANGE_ME_USER:CHANGE_ME_PASSWORD@CHANGE_ME_RDS_HOST:5432/planify?schema=public
+
+  JwtSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: planify/staging/jwt-secret
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludePunctuation: true
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadPlanifyStagingSecrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref DatabaseUrlSecret
+                  - !Ref JwtSecret
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Staging ALB - HTTP from the internet
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Staging ECS tasks - only from ALB on app port
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      Subnets: !Ref PublicSubnetIds
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetType: ip
+      Protocol: HTTP
+      Port: 3000
+      VpcId: !Ref VpcId
+      HealthCheckEnabled: true
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      Matcher:
+        HttpCode: "200-399"
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      CapacityProviders:
+        - FARGATE
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn:
+      - ApplicationLoadBalancer
+    Properties:
+      Family: planify-staging
+      Cpu: "1024"
+      Memory: "2048"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: backend
+          Essential: true
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/planify/backend:latest"
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          Environment:
+            - Name: NODE_ENV
+              Value: production
+            - Name: PORT
+              Value: "8000"
+            - Name: SKIP_PRISMA_DB_PUSH
+              Value: "0"
+            - Name: CORS_ORIGIN
+              Value: !Sub "http://${ApplicationLoadBalancer.DNSName}"
+          Secrets:
+            - Name: DATABASE_URL
+              ValueFrom: !Join ["", [!Ref DatabaseUrlSecret, "::"]]
+            - Name: JWT_SECRET
+              ValueFrom: !Join ["", [!Ref JwtSecret, "::"]]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BackendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: backend
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -fsS http://127.0.0.1:8000/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 90
+        - Name: frontend
+          Essential: true
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/planify/frontend:latest"
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          Environment:
+            - Name: BACKEND_HOST
+              Value: "127.0.0.1"
+          DependsOn:
+            - ContainerName: backend
+              Condition: START
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref FrontendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: frontend
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - wget -qO- http://127.0.0.1:3000/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
+
+  EcsService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - HttpListener
+    Properties:
+      Cluster: !Ref EcsCluster
+      ServiceName: !Ref ServiceName
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 50
+      HealthCheckGracePeriodSeconds: 120
+      LoadBalancers:
+        - TargetGroupArn: !Ref TargetGroup
+          ContainerName: frontend
+          ContainerPort: 3000
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: !Ref PublicSubnetIds
+          SecurityGroups:
+            - !Ref EcsSecurityGroup
+
+Outputs:
+  LoadBalancerDnsName:
+    Description: Point smoke tests / browser here (HTTP).
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+
+  EcrBackendRepositoryUri:
+    Description: Matches CI/CD image planify/backend.
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/planify/backend"
+
+  EcrFrontendRepositoryUri:
+    Description: Matches CI/CD image planify/frontend.
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/planify/frontend"
+
+  EcsClusterName:
+    Value: !Ref EcsCluster
+
+  EcsServiceName:
+    Value: !GetAtt EcsService.Name
+
+  DatabaseUrlSecretArn:
+    Description: Update this secret with a real DATABASE_URL before expecting healthy tasks.
+    Value: !Ref DatabaseUrlSecret
+
+  JwtSecretArn:
+    Value: !Ref JwtSecret
+
+  ContainerNamesHint:
+    Description: Use backend and frontend for GitHub vars ECS_CONTAINER_NAME_*.
+    Value: "backend, frontend"

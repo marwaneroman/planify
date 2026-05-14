@@ -16,24 +16,27 @@ RUN npm run build
 # Stage 2 — Serve
 FROM nginx:1.27-alpine AS runner
 
+RUN apk add --no-cache gettext su-exec
+
 # Non-privileged port + real passwd entry (ECS rejects missing users like the old `USER non-root`).
 RUN addgroup -g 1001 -S appgroup \
     && adduser -D -H -u 1001 -G appgroup -s /sbin/nologin appuser \
     && mkdir -p /var/cache/nginx/client_temp /var/cache/nginx/proxy_temp /var/run/nginx \
+        /etc/nginx/templates \
     && chown -R appuser:appgroup /var/cache/nginx /var/run/nginx /usr/share/nginx/html
 
 # Use configs from nginx/ folder:
 RUN rm -rf /etc/nginx/conf.d/*
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
-COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/dist /usr/share/nginx/html
-RUN chown -R appuser:appgroup /usr/share/nginx/html
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh \
+    && chown -R appuser:appgroup /usr/share/nginx/html
 
 EXPOSE 3000
-
-USER appuser
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
     CMD wget -qO- http://127.0.0.1:3000/health || exit 1
 
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
