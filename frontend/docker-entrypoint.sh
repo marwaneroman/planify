@@ -4,4 +4,5 @@ set -e
 export BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 mkdir -p /etc/nginx/conf.d
 envsubst '${BACKEND_HOST}' </etc/nginx/templates/default.conf.template >/etc/nginx/conf.d/default.conf
-exec su-exec appuser nginx -g 'daemon off;'
+# -e: pre-config errors avoid compiled-in /var/log/nginx/error.log (not writable as appuser).
+exec su-exec appuser nginx -e /tmp/nginx-emerg.log -g 'daemon off;'
