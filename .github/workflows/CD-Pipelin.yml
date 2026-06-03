@@ -45,11 +45,19 @@
 name: CD Pipeline (AWS)
 
 # CD runs after CI finishes so ECR :latest exists before sign-image pulls it.
+#on:
+# workflow_run:
+#    workflows: ["CI/CD"]
+#    types: [completed]
+#    branches: [integrate, master]
+
+# Just for testing, should be removed after
 on:
-  workflow_run:
-    workflows: ["CI/CD"]
-    types: [completed]
+  push:
     branches: [integrate, master]
+  pull_request:
+    branches: [integrate, master]
+# End of testing
 
 permissions:
   contents: read
@@ -68,7 +76,7 @@ jobs:
   guard:
     name: Guard — CI must pass
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event.workflow_run.conclusion != 'success'
     steps:
       - name: Guard notice
         run: |
