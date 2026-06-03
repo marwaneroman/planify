@@ -3,28 +3,28 @@
 # Copy this file or rename it; never commit real values to git.
 ###############################################################################
 
-aws_region = "us-east-2"
+aws_region = "us-east-1"
 
 # ── Networking ────────────────────────────────────────────────────────────────
 # Find these in the AWS console → VPC → Your VPCs / Subnets
-vpc_id = "vpc-0b93e9382dac29ccc"
+vpc_id = "vpc-0464b38e6f4f0effd"
 
 # Two PUBLIC subnets (different AZs) for the ALB + ECS tasks
 public_subnet_ids = [
-  "subnet-0f3dc27b89379e7ec", # AZ-a
-  "subnet-0a7eecc7bc4f2668a", # AZ-b
+  "subnet-0971cdf19779485d0", # AZ-a
+  "subnet-036abd85eeaa38da9", # AZ-b
 ]
 
 # Two PRIVATE subnets (different AZs) for RDS
 # Can reuse public subnets for simplicity, but private is recommended.
 database_subnet_ids = [
-  "subnet-0f3dc27b89379e7ec", # AZ-a
-  "subnet-0a7eecc7bc4f2668a", # AZ-b
+  "subnet-0971cdf19779485d0", # AZ-a
+  "subnet-036abd85eeaa38da9", # AZ-b
 ]
 
 # ── ECR ───────────────────────────────────────────────────────────────────────
 # Set to false if planify/backend and planify/frontend repos already exist
-create_ecr_repositories = true
+create_ecr_repositories = false
 
 # ── ECS ───────────────────────────────────────────────────────────────────────
 cluster_name = "planify-staging"
