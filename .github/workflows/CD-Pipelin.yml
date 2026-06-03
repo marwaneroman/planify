@@ -66,8 +66,8 @@ env:
   AWS_REGION:        ${{ vars.AWS_REGION }}
   AWS_ACCOUNT_ID:    ${{ vars.AWS_ACCOUNT_ID }}
   ECR_REGISTRY:      ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
-  IMAGE_TAG:         ${{ github.event.workflow_run.head_sha }}
-  DEPLOY_SHA:        ${{ github.event.workflow_run.head_sha }}
+  IMAGE_TAG:         ${{ github.event.workflow_run.head_sha || github.sha  }}
+  DEPLOY_SHA:        ${{ github.event.workflow_run.head_sha || github.sha  }}
 
 # ──────────────────────────────────────────────────────────────
 # 0. Guard — abort if CI did not pass
@@ -144,8 +144,8 @@ jobs:
       - name: Add immutable SHA tag (backend)
         id: tag-backend
         run: |
-          LATEST="${{ env.ECR_REGISTRY }}/${{ steps['ecr-repos'].outputs.backend }}latest"
-          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ steps['ecr-repos'].outputs.backend }}${{ env.IMAGE_TAG }}"
+          LATEST="${{ env.ECR_REGISTRY }}/${{ steps['ecr-repos'].outputs.backend }}:latest"
+          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ steps['ecr-repos'].outputs.backend }}:${{ env.IMAGE_TAG }}"
 
           docker pull "$LATEST"
           docker tag  "$LATEST" "$SHA_TAG"
