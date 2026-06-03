@@ -38,7 +38,8 @@ locals {
   db_host = lookup(local.rds_creds, "host", var.db_endpoint)
   db_port = tostring(lookup(local.rds_creds, "port", 5432))
 
-  database_url = "postgresql://${local.rds_creds.username}:${local.rds_creds.password}@${local.db_host}:${local.db_port}/${var.db_name}?schema=public&sslmode=require"
+  # RDS-managed passwords often include :, ?, ], etc. Must percent-encode userinfo or Prisma P1013.
+  database_url = "postgresql://${urlencode(local.rds_creds.username)}:${urlencode(local.rds_creds.password)}@${local.db_host}:${local.db_port}/${var.db_name}?schema=public&sslmode=require"
 }
 
 # -- DATABASE_URL secret -------------------------------------------------------
