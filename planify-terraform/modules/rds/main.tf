@@ -6,8 +6,8 @@
 #   - AWS-managed master password in Secrets Manager
 ###############################################################################
 
-variable "vpc_id"                   { type = string }
-variable "database_subnet_ids"      { type = list(string) }
+variable "vpc_id" { type = string }
+variable "database_subnet_ids" { type = list(string) }
 variable "ecs_tasks_security_group" { type = string }
 
 variable "db_instance_identifier" {
@@ -89,7 +89,7 @@ resource "aws_db_instance" "this" {
   storage_encrypted = true
 
   username                    = var.master_username
-  manage_master_user_password = true   # AWS creates & rotates the password in Secrets Manager
+  manage_master_user_password = true # AWS creates & rotates the password in Secrets Manager
 
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.rds.id]

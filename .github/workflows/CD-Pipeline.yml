@@ -10,8 +10,9 @@
 #                alarm-based auto-rollback
 #
 #  Prerequisites (do these once before running):
-#    1. Run the bootstrap script:  ./scripts/bootstrap-aws.sh
-#       This creates the IAM OIDC provider, roles, and CW alarms.
+#    1. Run Terraform (planify-terraform/) for staging infra + CW alarms.
+#       Optional: set production_alb_name / production_target_group_name for prod alarm.
+#       IAM OIDC roles may still be created via ./scripts/bootstrap-aws.sh if present.
 #    2. Create GitHub Environments in repo Settings → Environments:
 #         • staging    — no protection rules
 #         • production — add Required reviewers

@@ -45,6 +45,37 @@ variable "service_name" {
   default     = "planify-staging-web"
 }
 
+# ── CloudWatch deploy alarms ──────────────────────────────────────────────────
+variable "deploy_alarm_name" {
+  description = "Staging deploy alarm name (GitHub secret CW_ALARM_STAGING)."
+  type        = string
+  default     = "planify-staging-deploy-5xx"
+}
+
+variable "deploy_5xx_threshold" {
+  description = "Target 5xx count per minute that triggers a deploy alarm."
+  type        = number
+  default     = 5
+}
+
+variable "production_alb_name" {
+  description = "Production ALB name. Set with production_target_group_name to create CW_ALARM_PRODUCTION."
+  type        = string
+  default     = ""
+}
+
+variable "production_target_group_name" {
+  description = "Production target group name paired with production_alb_name."
+  type        = string
+  default     = ""
+}
+
+variable "production_deploy_alarm_name" {
+  description = "Production deploy alarm name (GitHub secret CW_ALARM_PRODUCTION)."
+  type        = string
+  default     = "planify-production-deploy-5xx"
+}
+
 # ── RDS ───────────────────────────────────────────────────────────────────────
 variable "db_instance_identifier" {
   description = "Unique RDS instance name in this account/region."

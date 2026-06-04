@@ -8,13 +8,14 @@
 #   - ECS Cluster (Fargate)
 #   - Task Definition (backend + frontend sidecar)
 #   - ECS Service
+#   - CloudWatch deploy alarms (ALB target 5xx)
 ###############################################################################
 
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
 # ── Variables ─────────────────────────────────────────────────────────────────
-variable "vpc_id"            { type = string }
+variable "vpc_id" { type = string }
 variable "public_subnet_ids" { type = list(string) }
 
 variable "alb_security_group_id" { type = string }
@@ -30,9 +31,39 @@ variable "service_name" {
   default = "planify-staging-web"
 }
 
-variable "database_url_secret_arn"    { type = string }
-variable "jwt_secret_arn"             { type = string }
+variable "database_url_secret_arn" { type = string }
+variable "jwt_secret_arn" { type = string }
 variable "rds_master_user_secret_arn" { type = string }
+
+variable "deploy_alarm_name" {
+  description = "CloudWatch alarm name for staging deploy rollback (GitHub secret CW_ALARM_STAGING)."
+  type        = string
+  default     = "planify-staging-deploy-5xx"
+}
+
+variable "deploy_5xx_threshold" {
+  description = "Sum of target 5xx responses in one 60s period before the staging alarm fires."
+  type        = number
+  default     = 5
+}
+
+variable "production_alb_name" {
+  description = "Optional production ALB name. When set with production_target_group_name, creates CW_ALARM_PRODUCTION."
+  type        = string
+  default     = ""
+}
+
+variable "production_target_group_name" {
+  description = "Optional production target group name (must match production_alb_name)."
+  type        = string
+  default     = ""
+}
+
+variable "production_deploy_alarm_name" {
+  description = "CloudWatch alarm name for production deploy rollback (GitHub secret CW_ALARM_PRODUCTION)."
+  type        = string
+  default     = "planify-production-deploy-5xx"
+}
 
 # ── CloudWatch Log Groups ─────────────────────────────────────────────────────
 resource "aws_cloudwatch_log_group" "backend" {
@@ -182,15 +213,15 @@ resource "aws_ecs_task_definition" "this" {
       portMappings = [{ containerPort = 8000, protocol = "tcp" }]
 
       environment = [
-        { name = "NODE_ENV",           value = "production" },
-        { name = "PORT",               value = "8000" },
+        { name = "NODE_ENV", value = "production" },
+        { name = "PORT", value = "8000" },
         { name = "SKIP_PRISMA_DB_PUSH", value = "0" },
-        { name = "CORS_ORIGIN",        value = "http://${aws_lb.this.dns_name}" },
+        { name = "CORS_ORIGIN", value = "http://${aws_lb.this.dns_name}" },
       ]
 
       secrets = [
         { name = "DATABASE_URL", valueFrom = var.database_url_secret_arn },
-        { name = "JWT_SECRET",   valueFrom = var.jwt_secret_arn },
+        { name = "JWT_SECRET", valueFrom = var.jwt_secret_arn },
       ]
 
       logConfiguration = {
@@ -243,6 +274,75 @@ resource "aws_ecs_task_definition" "this" {
   ])
 }
 
+# ── Optional production ALB (for deploy alarm when prod is not managed here) ──
+data "aws_lb" "production" {
+  count = var.production_alb_name != "" ? 1 : 0
+  name  = var.production_alb_name
+}
+
+data "aws_lb_target_group" "production_frontend" {
+  count = var.production_target_group_name != "" ? 1 : 0
+  name  = var.production_target_group_name
+}
+
+locals {
+  create_production_deploy_alarm = (
+    var.production_alb_name != "" &&
+    var.production_target_group_name != ""
+  )
+}
+
+# ── CloudWatch deploy alarms (ALB target 5xx) ─────────────────────────────────
+resource "aws_cloudwatch_metric_alarm" "staging_deploy_5xx" {
+  alarm_name          = var.deploy_alarm_name
+  alarm_description   = "Staging ALB target 5xx — used by ECS deploy rollback and CD observe step."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  datapoints_to_alarm = 2
+  metric_name         = "HTTPCode_Target_5XX_Count"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = var.deploy_5xx_threshold
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    LoadBalancer = aws_lb.this.arn_suffix
+    TargetGroup  = aws_lb_target_group.frontend.arn_suffix
+  }
+
+  tags = {
+    Environment = "staging"
+    ManagedBy   = "terraform"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "production_deploy_5xx" {
+  count = local.create_production_deploy_alarm ? 1 : 0
+
+  alarm_name          = var.production_deploy_alarm_name
+  alarm_description   = "Production ALB target 5xx — used by ECS canary rollback and CD observe step."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  datapoints_to_alarm = 2
+  metric_name         = "HTTPCode_Target_5XX_Count"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = var.deploy_5xx_threshold
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    LoadBalancer = data.aws_lb.production[0].arn_suffix
+    TargetGroup  = data.aws_lb_target_group.production_frontend[0].arn_suffix
+  }
+
+  tags = {
+    Environment = "production"
+    ManagedBy   = "terraform"
+  }
+}
+
 # ── ECS Service ───────────────────────────────────────────────────────────────
 resource "aws_ecs_service" "this" {
   name            = var.service_name
@@ -257,6 +357,19 @@ resource "aws_ecs_service" "this" {
   deployment_maximum_percent         = 200
   deployment_minimum_healthy_percent = 50
   health_check_grace_period_seconds  = 120
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  alarms {
+    enable   = true
+    rollback = true
+    alarm_names = [
+      aws_cloudwatch_metric_alarm.staging_deploy_5xx.alarm_name,
+    ]
+  }
 
   load_balancer {
     target_group_arn = aws_lb_target_group.frontend.arn
@@ -287,4 +400,14 @@ output "cluster_name" {
 
 output "service_name" {
   value = aws_ecs_service.this.name
+}
+
+output "cloudwatch_deploy_alarm_name" {
+  description = "Set as GitHub secret CW_ALARM_STAGING."
+  value       = aws_cloudwatch_metric_alarm.staging_deploy_5xx.alarm_name
+}
+
+output "cloudwatch_production_deploy_alarm_name" {
+  description = "Set as GitHub secret CW_ALARM_PRODUCTION (null until production ALB/TG names are configured)."
+  value       = try(aws_cloudwatch_metric_alarm.production_deploy_5xx[0].alarm_name, null)
 }

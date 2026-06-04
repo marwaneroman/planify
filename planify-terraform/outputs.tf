@@ -27,6 +27,16 @@ output "ecs_service_name" {
   value       = module.ecs.service_name
 }
 
+output "cloudwatch_deploy_alarm_name" {
+  description = "Set as GitHub secret CW_ALARM_STAGING."
+  value       = module.ecs.cloudwatch_deploy_alarm_name
+}
+
+output "cloudwatch_production_deploy_alarm_name" {
+  description = "Set as GitHub secret CW_ALARM_PRODUCTION (empty until production ALB/TG names are set in tfvars)."
+  value       = module.ecs.cloudwatch_production_deploy_alarm_name
+}
+
 output "database_url_secret_arn" {
   description = "Secrets Manager ARN for DATABASE_URL (auto-populated from RDS)."
   value       = module.secrets.database_url_secret_arn

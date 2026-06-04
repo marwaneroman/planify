@@ -38,13 +38,13 @@ module "rds" {
   database_subnet_ids      = var.database_subnet_ids
   ecs_tasks_security_group = module.networking.ecs_security_group_id
 
-  db_instance_identifier = var.db_instance_identifier
-  db_name                = var.db_name
-  master_username        = var.master_username
-  db_instance_class      = var.db_instance_class
-  allocated_storage      = var.allocated_storage
-  engine_version         = var.engine_version
-  publicly_accessible    = var.db_publicly_accessible
+  db_instance_identifier  = var.db_instance_identifier
+  db_name                 = var.db_name
+  master_username         = var.master_username
+  db_instance_class       = var.db_instance_class
+  allocated_storage       = var.allocated_storage
+  engine_version          = var.engine_version
+  publicly_accessible     = var.db_publicly_accessible
   backup_retention_period = var.backup_retention_period
 }
 
@@ -70,6 +70,13 @@ module "ecs" {
 
   cluster_name = var.cluster_name
   service_name = var.service_name
+
+  deploy_alarm_name    = var.deploy_alarm_name
+  deploy_5xx_threshold = var.deploy_5xx_threshold
+
+  production_alb_name          = var.production_alb_name
+  production_target_group_name = var.production_target_group_name
+  production_deploy_alarm_name = var.production_deploy_alarm_name
 
   database_url_secret_arn = module.secrets.database_url_secret_arn
   jwt_secret_arn          = module.secrets.jwt_secret_arn

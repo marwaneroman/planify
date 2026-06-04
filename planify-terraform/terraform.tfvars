@@ -38,4 +38,4 @@ db_instance_class       = "db.t4g.micro"
 allocated_storage       = 20
 engine_version          = "16"
 db_publicly_accessible  = false
-backup_retention_period = 0   # Increase after upgrading AWS plan
+backup_retention_period = 0 # Increase after upgrading AWS plan

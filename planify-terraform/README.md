@@ -20,7 +20,7 @@ planify-terraform/
     ├── networking/– Security groups (ALB, ECS)
     ├── rds/       – PostgreSQL RDS + subnet group + RDS security group
     ├── secrets/   – DATABASE_URL + JWT secrets in Secrets Manager
-    └── ecs/       – ALB, ECS cluster, task definition, Fargate service
+    └── ecs/       – ALB, ECS cluster, task definition, Fargate service, deploy alarms
 ```
 
 ---
@@ -91,8 +91,16 @@ terraform output
 |------------------|--------------|
 | `ecs_cluster_name` | `ECS_CLUSTER_STAGING` |
 | `ecs_service_name` | `ECS_SERVICE_STAGING` |
+| `cloudwatch_deploy_alarm_name` | `CW_ALARM_STAGING` |
+| `cloudwatch_production_deploy_alarm_name` | `CW_ALARM_PRODUCTION` (set `production_alb_name` + `production_target_group_name` in tfvars first) |
 | `ecr_backend_repository_uri` | `ECR_BACKEND_URI` |
 | `ecr_frontend_repository_uri` | `ECR_FRONTEND_URI` |
+
+### CloudWatch deploy alarms
+
+Terraform creates a **staging** alarm on ALB target HTTP 5xx (`planify-staging-deploy-5xx` by default) and wires it to the ECS service for automatic rollback on failed deploys.
+
+For **production**, set `production_alb_name` and `production_target_group_name` in `terraform.tfvars` (names of resources that already exist in AWS). Terraform looks them up and creates `planify-production-deploy-5xx` (configurable via `production_deploy_alarm_name`). The CD pipeline `observe` job reads `CW_ALARM_PRODUCTION` after deploy.
 
 ---
 

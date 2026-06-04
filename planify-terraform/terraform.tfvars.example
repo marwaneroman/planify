@@ -30,6 +30,13 @@ create_ecr_repositories = true
 cluster_name = "planify-staging"
 service_name = "planify-staging-web"
 
+# ── CloudWatch deploy alarms (CD pipeline: CW_ALARM_STAGING / CW_ALARM_PRODUCTION) ─
+# Staging alarm is always created for the ALB this stack deploys.
+# Uncomment production names once you have a production ALB + target group in AWS:
+# production_alb_name            = "planify-production-alb"
+# production_target_group_name     = "planify-production-frontend"
+# production_deploy_alarm_name     = "planify-production-deploy-5xx"
+
 # ── RDS ───────────────────────────────────────────────────────────────────────
 db_instance_identifier  = "planify-staging-postgres"
 db_name                 = "planify"
