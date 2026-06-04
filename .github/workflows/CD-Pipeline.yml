@@ -747,7 +747,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [sign-image, deploy-production, observe]
     if: ${{ success() }}
-
     steps:
       - name: Checkout (for changelog)
         uses: actions/checkout@v4
@@ -766,25 +765,31 @@ jobs:
           echo "$CHANGES"     >> "$GITHUB_ENV"
           echo "EOF"          >> "$GITHUB_ENV"
 
-      - name: Post success to Slack
-        run: |
-          curl -s -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "text": "✅ *Production deployment successful*",
-              "attachments": [{
-                "color": "good",
-                "fields": [
-                  {"title":"Repo",       "value":"${{ github.repository }}", "short":true},
-                  {"title":"Commit",     "value":"`${{ env.DEPLOY_SHA }}`",       "short":true},
-                  {"title":"Actor",      "value":"${{ github.actor }}",        "short":true},
-                  {"title":"Region",     "value":"${{ env.AWS_REGION }}",      "short":true},
-                  {"title":"Backend image",  "value":"`${{ needs['sign-image'].outputs.backend_image_uri }}`", "short":false},
-                  {"title":"Frontend image", "value":"`${{ needs['sign-image'].outputs.frontend_image_uri }}`", "short":false},
-                  {"title":"Run",        "value":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short":false}
-                ]
-              }]
-            }'
+      - name: Send deployment success email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SMTP_HOST }}
+          server_port:    ${{ secrets.MAIL_SMTP_PORT }}
+          username:       ${{ secrets.MAIL_USERNAME }}
+          password:       ${{ secrets.MAIL_PASSWORD }}
+          secure:         true                          # TLS; set false + starttls: true for port 587
+          from:           "GitHub Actions <${{ secrets.MAIL_USERNAME }}>"
+          to:             ${{ secrets.NOTIFY_EMAIL }}
+          subject:        "✅ [${{ github.repository }}] Production deployment successful — ${{ env.DEPLOY_SHA }}"
+          html_body: |
+            <h2>✅ Production Deployment Successful</h2>
+            <table cellpadding="6" cellspacing="0" border="1" style="border-collapse:collapse;font-family:monospace">
+              <tr><th align="left">Repo</th>             <td>${{ github.repository }}</td></tr>
+              <tr><th align="left">Commit</th>           <td><code>${{ env.DEPLOY_SHA }}</code></td></tr>
+              <tr><th align="left">Actor</th>            <td>${{ github.actor }}</td></tr>
+              <tr><th align="left">Region</th>           <td>${{ env.AWS_REGION }}</td></tr>
+              <tr><th align="left">Backend image</th>    <td><code>${{ needs['sign-image'].outputs.backend_image_uri }}</code></td></tr>
+              <tr><th align="left">Frontend image</th>   <td><code>${{ needs['sign-image'].outputs.frontend_image_uri }}</code></td></tr>
+              <tr><th align="left">Workflow run</th>     <td><a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">View run</a></td></tr>
+            </table>
+
+            <h3>Changelog since last tag</h3>
+            <pre>${{ env.CHANGES }}</pre>
 
       - name: Write deployment audit record
         run: |
