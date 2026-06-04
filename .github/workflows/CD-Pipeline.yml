@@ -70,7 +70,7 @@ env:
   DEPLOY_SHA:        ${{ github.event.workflow_run.head_sha || github.sha  }}
 
 # ──────────────────────────────────────────────────────────────
-# 0. Guard — abort if CI did not pass
+# 0. Guard — abort if CI did not pass 
 # ──────────────────────────────────────────────────────────────
 jobs:
   guard:
