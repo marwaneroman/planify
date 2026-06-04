@@ -1,5 +1,5 @@
 # Lint → Secret Scan → SAST → Unit Tests → Dependency Audit → Build → Container Scan → Integration → E2E → Push
-name: CI/CD
+name: CI Pipeline
 
 on:
   push:
