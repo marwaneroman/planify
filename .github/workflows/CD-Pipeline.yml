@@ -42,14 +42,14 @@
 #
 # ================================================================
 
-name: CD Pipeline (AWS)
+name: CD-Pipeline
 
 # CD runs after CI finishes so ECR :latest exists before sign-image pulls it. 
 on:
  workflow_run:
-    workflows: ["CI Pipeline"]
+    workflows: ["CI-Pipeline"]
     types: [completed]
-    branches: [integrate, master]
+    branches: [integrate, main]
 
 # Just for testing, should be removed after
 #on:

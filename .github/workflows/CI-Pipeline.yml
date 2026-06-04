@@ -1,11 +1,11 @@
 # Lint → Secret Scan → SAST → Unit Tests → Dependency Audit → Build → Container Scan → Integration → E2E → Push
-name: CI Pipeline
+name: CI-Pipeline
 
 on:
   push:
-    branches: [integrate, master]
+    branches: [integrate, main]
   pull_request:
-    branches: [integrate, master]
+    branches: [integrate, main]
 
 env:
   NODE_VERSION: "20"
