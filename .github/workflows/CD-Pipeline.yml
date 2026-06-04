@@ -44,7 +44,7 @@
 
 name: CD Pipeline (AWS)
 
-# CD runs after CI finishes so ECR :latest exists before sign-image pulls it.
+# CD runs after CI finishes so ECR :latest exists before sign-image pulls it. 
 on:
  workflow_run:
     workflows: ["CI Pipeline"]
