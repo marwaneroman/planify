@@ -52,7 +52,7 @@ on:
     branches: [integrate, master]
 
 # Just for testing, should be removed after
-on:
+#on:
 #  push:
 #    branches: [integrate, master]
 #  pull_request:
